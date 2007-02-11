@@ -1,0 +1,20 @@
+#summary How to install and run the haXeVideo server
+#labels Featured
+
+= Installation =
+
+In order to run the haXeVideo server, you need first to download install haXe from http://haxe.org/download. You can then download the latest haXeVideo release from the *Downloads* section.
+
+= Testing =
+
+Once you have the source releases, run _haxe video.hxml_, this will compile a _server.n_ and a _video.swf_ file. You can start the server on localhost by executing :
+
+    neko server.n localhost 1935
+
+You can open the _video.html_ file to display the _videos/test.flv_ file in realtime streaming.
+
+Although the haXeVideo FLV server works for all Flash versions, displaying the _video.swf_ requires Flash Player 9, so make sure it is installed.
+
+
+
+
