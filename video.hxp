@@ -1,0 +1,14 @@
+﻿<haxe selected="0">
+  <output name="Client" mode="swf9" out="video.swf" class="hxvid.Video" lib="" cmd="" main="True" debug="True"></output>
+  <output name="Server" mode="neko" out="server.n" class="hxvid.Server" lib="" cmd="" main="True" debug="False"></output>
+  <files path="/">
+    <dir path="format">
+      <file path="format\Amf.hx" />
+      <file path="format\Flv.hx" />
+      <file path="format\Rtmp.hx" />
+    </dir>
+    <file path="hxvid\Client.hx" />
+    <file path="hxvid\Server.hx" />
+    <file path="hxvid\Video.hx" />
+  </files>
+</haxe>
