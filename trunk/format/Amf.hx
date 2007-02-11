@@ -20,7 +20,7 @@ enum AmfValue {
 	ANumber( f : Float );
 	ABool( b : Bool );
 	AString( s : String );
-	AObject( fields : Hash<AmfValue> );
+	AObject( fields : Hash<AmfValue>, ?size : Int );
 	AUndefined;
 	ANull;
 }
@@ -41,8 +41,10 @@ class Amf {
 			);
 		case 0x02:
 			AString( i.read(i.readUInt16B()) );
-		case 0x03:
+		case 0x03,0x08:
 			var h = new Hash();
+			var ismixed = (id == 0x08);
+			var size = if( ismixed ) i.readUInt32B() else null;
 			while( true ) {
 				var c1 = i.readChar();
 				var c2 = i.readChar();
@@ -52,7 +54,7 @@ class Amf {
 					break;
 				h.set(name,readWithCode(i,k));
 			}
-			AObject(h);
+			AObject(h,size);
 		case 0x05:
 			ANull;
 		case 0x06:
@@ -80,8 +82,13 @@ class Amf {
 			o.writeChar(0x02);
 			o.writeUInt16B(s.length);
 			o.write(s);
-		case AObject(h):
-			o.writeChar(0x03);
+		case AObject(h,size):
+			if( size == null )
+				o.writeChar(0x03);
+			else {
+				o.writeChar(0x08);
+				o.writeUInt32B(size);
+			}
 			for( f in h.keys() ) {
 				o.writeUInt16B(f.length);
 				o.write(f);
