@@ -24,14 +24,7 @@ enum FLVChunk {
 
 class Flv {
 
-	var ch : neko.io.Input;
-
-	public function new( ch : neko.io.Input ) {
-		this.ch = ch;
-		readHeader();
-	}
-
-	function readHeader() {
+	public static function readHeader( ch : neko.io.Input ) {
 		if( ch.read(3) != 'FLV' )
 			throw "Invalid signature";
 		if( ch.readChar() != 0x01 )
@@ -45,7 +38,15 @@ class Flv {
 			throw "Invalid prev 0";
 	}
 
-	public function readChunk() {
+	public static function writeHeader( ch : neko.io.Output ) {
+		ch.write("FLV");
+		ch.writeChar(0x01);
+		ch.writeChar(0x05);
+		ch.writeUInt32B(0x09);
+		ch.writeUInt32B(0x00);
+	}
+
+	public static function readChunk( ch : neko.io.Input ) {
 		var k = try ch.readChar() catch( e : neko.io.Eof ) return null;
 		var size = ch.readUInt24B();
 		var time = ch.readUInt24B();
@@ -54,7 +55,7 @@ class Flv {
 			throw "Invalid reserved "+reserved;
 		var data = ch.read(size);
 		var size2 = ch.readUInt32B();
-		if( size2 != size + 11 )
+		if( size2 != 0 && size2 != size + 11 )
 			throw "Invalid size2 ("+size+" != "+size2+")";
 		return switch( k ) {
 		case 0x08:
@@ -68,8 +69,19 @@ class Flv {
 		}
 	}
 
-	public function close() {
-		ch.close();
+	public static function writeChunk( ch : neko.io.Output, chunk : FLVChunk ) {
+		var k, data, time;
+		switch( chunk ) {
+		case FLVAudio(d,t): k = 0x08; data = d; time = t;
+		case FLVVideo(d,t): k = 0x09; data = d; time = t;
+		case FLVMeta(d,t): k = 0x12; data = d; time = t;
+		}
+		ch.writeChar(k);
+		ch.writeUInt24B(data.length);
+		ch.writeUInt24B(time);
+		ch.writeUInt32B(0);
+		ch.write(data);
+		ch.writeUInt32B(data.length + 11);
 	}
 
 }

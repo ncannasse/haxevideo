@@ -17,6 +17,7 @@
 package hxvid;
 
 import format.Amf;
+import format.Flv;
 import format.Rtmp;
 
 typedef RtmpMessage = {
@@ -29,10 +30,15 @@ typedef RtmpStream = {
 	var channel : Int;
 	var play : {
 		var file : String;
-		var flv : format.Flv;
+		var flv : neko.io.Input;
 		var startTime : Float;
 		var curTime : Int;
 		var blocked : Float;
+	};
+	var record : {
+		var file : String;
+		var startTime : Float;
+		var flv : neko.io.Output;
 	};
 }
 
@@ -45,18 +51,33 @@ enum ClientState {
 
 class Client {
 
+	static var file_security = ~/^[A-Za-z0-9_-][A-Za-z0-9_\/-]*(\.flv)?$/;
+
 	public var socket : neko.net.Socket;
 	var rtmp : Rtmp;
 	var state : ClientState;
 	var output : neko.net.SocketBufferedOutput;
 	var streams : Array<RtmpStream>;
+	var dir : String;
 
 	public function new( s ) {
 		socket = s;
+		dir = Server.BASE_DIR;
 		output = new neko.net.SocketBufferedOutput(socket,Server.CLIENT_BUFFER_SIZE);
 		state = WaitHandshake;
 		streams = new Array();
 		rtmp = new Rtmp(null,output);
+	}
+
+	function addData( h : RtmpHeader, data : String, audio : Bool ) {
+		var s = streams[h.src_dst];
+		if( s == null )
+			throw "Unknown stream "+h.src_dst;
+		if( s.record == null )
+			throw "Publish not done on stream "+h.src_dst;
+		var time = Std.int((neko.Sys.time() - s.record.startTime) * 1000);
+		var chunk = (if( audio ) FLVAudio else FLVVideo)(data,time);
+		Flv.writeChunk(s.record.flv,chunk);
 	}
 
 	public function readProgressive( buf, pos, len ) {
@@ -101,6 +122,26 @@ class Client {
 		return null;
 	}
 
+	function error( h : RtmpHeader, msg : String ) {
+		rtmp.send(h.channel,PCall("onStatus",0,[
+			ANull,
+			Amf.encode({
+				level : "error",
+				code : "NetStream.Error",
+				details : msg,
+			})
+		]),null,h.src_dst);
+		throw "ERROR "+msg;
+	}
+
+	function securize( h, file : String ) {
+		if( !file_security.match(file) )
+			error(h,"Invalid file name "+file);
+		if( file.indexOf(".") == -1 )
+			file += ".flv";
+		return dir + file;
+	}
+
 	public function processPacket( h : RtmpHeader, p : RtmpPacket ) {
 		//neko.Lib.print("#"+h.channel+(if( h.src_dst != null && h.src_dst != 0 ) ":" + h.src_dst else "")+" ");
 		switch( p ) {
@@ -108,6 +149,14 @@ class Client {
 			switch( cmd ) {
 			case "connect":
 				trace("CONNECT");
+				var obj, app;
+				if( args.length != 1 || (obj = Amf.object(args[0])) == null || (app = Amf.string(obj.get("app"))) == null )
+					error(h,"Invalid 'connect' parameters");
+				if( app != "" && !file_security.match(app) )
+					error(h,"Invalid application path");
+				dir = dir + app;
+				if( dir.charAt(dir.length-1) != "/" )
+					dir = dir + "/";
 				rtmp.send(h.channel,PCall("_result",iid,[
 					ANull,
 					Amf.encode({
@@ -126,41 +175,60 @@ class Client {
 			case "play":
 				var s = streams[h.src_dst];
 				if( s == null )
-					throw "Unknown 'play' channel";
+					error(h,"Unknown 'play' channel");
 				if( s.play != null )
-					throw "This channel is already playing a FLV";
+					error(h,"This channel is already playing a FLV");
 				var file, flv;
 				if( args.length != 2 || args[0] != ANull || (file = Amf.string(args[1])) == null )
-					throw "Invalid 'play' arguments";
+					error(h,"Invalid 'play' arguments");
+				file = securize(h,file);
 				try {
 					trace("PLAY '"+file+"'");
-					flv = new format.Flv(neko.io.File.read(file,true));
+					flv = neko.io.File.read(file,true);
+					Flv.readHeader(flv);
 				} catch( e : Dynamic ) {
-					trace("ERROR");
-					rtmp.send(h.channel,PCall("onStatus",0,[
-						ANull,
-						Amf.encode({
-							level : "error",
-							code : "NetStream.Play.StreamNotFound",
-							details : Std.string(e),
-						})
-					]),null,s.id);
-					return;
+					if( flv != null ) {
+						flv.close();
+						error(h,"Corrupted FLV File '"+file+"'");
+					}
+					error(h,"FLV file not found '"+file+"'");
 				}
 				s.channel = h.channel;
 				sendFLV(s,file,flv);
 			case "deleteStream":
 				var stream;
 				if( args.length != 2 || args[0] != ANull || (stream = Amf.number(args[1])) == null )
-					throw "Invalid 'deleteStream' arguments";
+					error(h,"Invalid 'deleteStream' arguments");
+				var s = streams[Std.int(stream)];
+				if( s == null )
+					error(h,"Invalid 'deleteStream' streamid");
 				trace("DELETESTREAM "+stream);
+				closeStream(s);
+			case "publish":
+				var s = streams[h.src_dst];
+				if( s == null || s.record != null )
+					error(h,"Invalid 'publish' streamid'");
+				var file;
+				if( args.length != 3 || args[0] != ANull || (file = Amf.string(args[1])) == null )
+					error(h,"Invalid 'publish' arguments");
+				if( Amf.string(args[2]) != "record" )
+					error(h,"Need 'record' argument");
+				file = securize(h,file);
+				trace("PUBLISH '"+file+"'");
+				var flv : neko.io.Output = neko.io.File.write(file,true);
+				Flv.writeHeader(flv);
+				s.record = {
+					file : file,
+					startTime : neko.Sys.time(),
+					flv : flv,
+				};
 			default:
 				throw "Unknown command "+cmd+"("+args.join(",")+")";
 			}
 		case PAudio(data):
-			trace("AUDIO "+data.length+" bytes");
+			addData(h,data,true);
 		case PVideo(data):
-			trace("VIDEO "+data.length+" bytes");
+			addData(h,data,false);
 		case PCommand(sid,cmd):
 			trace("COMMAND "+Std.string(cmd)+":"+sid);
 		case PBytesReaded(b):
@@ -185,12 +253,21 @@ class Client {
 			id : id,
 			channel : null,
 			play : null,
+			record : null,
 		};
 		streams[s.id] = s;
 		return s;
 	}
 
-	function sendFLV( s : RtmpStream, file : String, flv : format.Flv ) {
+	function closeStream( s : RtmpStream ) {
+		if( s.play != null )
+			s.play.flv.close();
+		if( s.record != null )
+			s.record.flv.close();
+		streams[s.id] = null;
+	}
+
+	function sendFLV( s : RtmpStream, file : String, flv : neko.io.Input ) {
 		rtmp.send(2,PCommand(s.id,CReset));
 		rtmp.send(2,PCommand(s.id,CClear));
 		rtmp.send(s.channel,PCall("onStatus",0,[
@@ -224,7 +301,7 @@ class Client {
         var audio = true;
         var video = true;
 		while( true ) {
-			var c = s.play.flv.readChunk();
+			var c = Flv.readChunk(s.play.flv);
 			if( c == null )
 				break;
 			switch( c ) {
@@ -260,7 +337,7 @@ class Client {
 		}
 		var reltime = Std.int((t - p.startTime) * 1000);
 		while( reltime > p.curTime ) {
-			var c = p.flv.readChunk();
+			var c = Flv.readChunk(p.flv);
 			if( c == null ) {
 				p.flv.close();
 				s.play = null;
@@ -291,8 +368,8 @@ class Client {
 
 	public function stop() {
 		for( s in streams )
-			if( s != null && s.play != null )
-				s.play.flv.close();
+			if( s != null )
+				closeStream(s);
 		streams = new Array();
 	}
 

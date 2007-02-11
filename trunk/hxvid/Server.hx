@@ -21,6 +21,7 @@ class Server extends neko.net.ThreadServer<Client,RtmpMessage> {
 
 	public static var FLV_BUFFER_TIME : Float = 5;
 	public static var CLIENT_BUFFER_SIZE = (1 << 14); // 16 KB output buffer
+	public static var BASE_DIR = "videos/";
 	static var CID = 0;
 
 	var clients : List<Client>;
@@ -43,8 +44,14 @@ class Server extends neko.net.ThreadServer<Client,RtmpMessage> {
 	}
 
 	public function clientMessage( c : Client, msg : RtmpMessage ) {
-		if( msg != null )
-			c.processPacket(msg.header,msg.packet);
+		if( msg != null ) {
+			try {
+				c.processPacket(msg.header,msg.packet);
+			} catch( e : Dynamic ) {
+				stopClient(c.socket);
+				logError(e);
+			}
+		}
 	}
 
 	public function readClientMessage( c : Client, buf : String, pos : Int, len : Int ) {

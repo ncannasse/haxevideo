@@ -126,6 +126,7 @@ class Amf {
 	}
 
 	public static function number( a : AmfValue ) {
+		if( a == null ) return null;
 		return switch( a ) {
 		case ANumber(n): n;
 		default: null;
@@ -133,8 +134,17 @@ class Amf {
 	}
 
 	public static function string( a : AmfValue ) {
+		if( a == null ) return null;
 		return switch( a ) {
 		case AString(s): s;
+		default: null;
+		}
+	}
+
+	public static function object( a : AmfValue ) {
+		if( a == null ) return null;
+		return switch( a ) {
+		case AObject(o,_): o;
 		default: null;
 		}
 	}
