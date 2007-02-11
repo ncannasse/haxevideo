@@ -14,35 +14,16 @@
 /* Lesser General Public License or the LICENSE file for more details.		*/
 /*																			*/
 /* ************************************************************************ */
-package hxvid;
+package samples;
 
 class Video {
 
-	static var nc;
-
-	static function display(e) {
-		trace(e.info);
-		if( e.info.code == "NetConnection.Connect.Success" ) {
-			var mc = flash.Lib.current;
-			var st = mc.stage;
-			var v = new flash.media.Video(st.stageWidth,st.stageHeight);
-			mc.addChild(v);
-
-			var ns = new flash.net.NetStream(nc);
-			ns.addEventListener(flash.events.NetStatusEvent.NET_STATUS,display);
-			v.attachNetStream(ns);
-			ns.play("videos/test.flv");
-		}
-	}
+	static var host = "rtmp://localhost";
+	static var video = "videos/test.flv";
 
 	public static function main() {
-		trace("Connecting...");
 		flash.net.NetConnection.defaultObjectEncoding = flash.net.ObjectEncoding.AMF0;
-
-		nc = new flash.net.NetConnection();
-		nc.addEventListener(flash.events.NetStatusEvent.NET_STATUS,display);
-		//nc.connect(null);
-		nc.connect("rtmp://localhost");
+		var p = new VideoPlayer(host,video);
 	}
 
 }
