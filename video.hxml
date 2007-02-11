@@ -1,7 +1,7 @@
 # Client
 -swf video.swf
 -swf-version 9
--main hxvid.Video
+-main samples.Video
 -debug
 
 

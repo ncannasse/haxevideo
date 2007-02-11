@@ -16,28 +16,36 @@
 /* ************************************************************************ */
 package samples;
 
-class VideoPlayer extends flash.media.Video {
+class Webcam extends flash.media.Video {
 
+	var file : String;
 	var nc : flash.net.NetConnection;
 	var ns : flash.net.NetStream;
-	var file : String;
+	var cam : flash.media.Camera;
+	var mic : flash.media.Microphone;
 
 	public function new(host,file) {
 		super();
-		trace("Connecting...");
 		this.file = file;
+		cam = flash.media.Camera.getCamera();
+		mic = flash.media.Microphone.getMicrophone();
+		if( cam == null )
+			throw "Webcam not found";
 		nc = new flash.net.NetConnection();
 		nc.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
 		nc.connect(host);
 	}
+
 
 	function onEvent(e) {
 		trace(e.info);
 		if( e.info.code == "NetConnection.Connect.Success" ) {
 			ns = new flash.net.NetStream(nc);
 			ns.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
-			attachNetStream(ns);
-			ns.play(file);
+			ns.attachCamera(cam);
+			ns.attachAudio(mic);
+			attachCamera(cam);
+			ns.publish(file,"record");
 		}
 	}
 
