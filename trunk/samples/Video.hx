@@ -19,7 +19,7 @@ package samples;
 class Video {
 
 	static var host = "rtmp://localhost";
-	static var video = "test/ff";
+	static var video = "test.flv";
 	static var record = "record.flv";
 	static var current : flash.display.DisplayObject = null;
 	static var trace : flash.text.TextField;
