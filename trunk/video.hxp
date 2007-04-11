@@ -1,14 +1,15 @@
-﻿<haxe selected="0">
-  <output name="Client" mode="swf9" out="video.swf" class="samples.Video" lib="" cmd="" main="True" debug="True"></output>
-  <output name="Server" mode="neko" out="server.n" class="hxvid.Server" lib="" cmd="" main="True" debug="False"></output>
-  <files path="/">
+﻿<haxe selected="1">
+  <output name="Client" mode="swf9" out="video.swf" class="samples.Main" lib="" cmd="" main="True" debug="True"></output>
+  <output name="Server" mode="neko" out="server.n" class="hxvid.Server" lib="" cmd="server.bat" main="True" debug="False"></output>
+  <files path="">
     <dir path="format">
       <file path="format\Amf.hx" />
       <file path="format\Flv.hx" />
       <file path="format\Rtmp.hx" />
     </dir>
     <dir path="samples">
-      <file path="samples\Video.hx" />
+      <file path="samples\Display.hx" />
+      <file path="samples\Main.hx" />
       <file path="samples\VideoPlayer.hx" />
       <file path="samples\Webcam.hx" />
     </dir>

@@ -149,4 +149,12 @@ class Amf {
 		}
 	}
 
+	public static function bool( a : AmfValue ) {
+		if( a == null ) return null;
+		return switch( a ) {
+		case ABool(b): b;
+		default: null;
+		}
+	}
+
 }

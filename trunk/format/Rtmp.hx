@@ -94,14 +94,16 @@ class Rtmp {
 
 	var channels : Array<{ header : RtmpHeader, buffer : StringBuf, bytes : Int }>;
 	var saves : Array<RtmpHeader>;
-	var chunk_size : Int;
+	var read_chunk_size : Int;
+	var write_chunk_size : Int;
 	public var i : neko.io.Input;
 	public var o : neko.io.Output;
 
 	public function new(input,output) {
 		i = input;
 		o = output;
-		chunk_size = 128;
+		read_chunk_size = 128;
+		write_chunk_size = 128;
 		channels = new Array();
 		saves = new Array();
 	}
@@ -243,7 +245,7 @@ class Rtmp {
 		h.size = data.length;
 		// write packet header + data
 		writeHeader(h);
-		var pos = chunk_size;
+		var pos = write_chunk_size;
 		if( data.length <= pos )
 			o.write(data);
 		else {
@@ -251,7 +253,7 @@ class Rtmp {
 			o.writeFullBytes(data,0,pos);
 			while( len > 0 ) {
 				o.writeChar(channel | (INV_HSIZES[1] << 6));
-				var n = if( len > chunk_size ) chunk_size else len;
+				var n = if( len > write_chunk_size ) write_chunk_size else len;
 				o.writeFullBytes(data,pos,n);
 				pos += n;
 				len -= n;
@@ -304,14 +306,15 @@ class Rtmp {
 		case KUnknown(k):
 			return PUnknown(k,body);
 		case KChunkSize:
-			chunk_size = new neko.io.StringInput(body).readUInt32B();
+			read_chunk_size = new neko.io.StringInput(body).readUInt32B();
 			return null;
 		case KBytesReaded:
 			return PBytesReaded(new neko.io.StringInput(body).readUInt32B());
 		}
 	}
 
-	public function bodyLength( h : RtmpHeader ) {
+	public function bodyLength( h : RtmpHeader, read : Bool ) {
+		var chunk_size = if( read ) read_chunk_size else write_chunk_size;
 		var s = channels[h.channel];
 		if( s == null ) {
 			if( h.size < chunk_size )
@@ -327,11 +330,11 @@ class Rtmp {
 	public function readPacket( h : RtmpHeader ) {
 		var s = channels[h.channel];
 		if( s == null ) {
-			if( h.size < chunk_size )
+			if( h.size <= read_chunk_size )
 				return processBody(h,i.read(h.size));
 			var buf = new StringBuf();
-			buf.add(i.read(chunk_size));
-			channels[h.channel] = { header : h, buffer : buf, bytes : h.size - chunk_size };
+			buf.add(i.read(read_chunk_size));
+			channels[h.channel] = { header : h, buffer : buf, bytes : h.size - read_chunk_size };
 		} else {
 			if( h.timestamp != s.header.timestamp )
 				throw "Timestamp changing";
@@ -341,9 +344,9 @@ class Rtmp {
 				throw "Kind changing";
 			if( h.size != s.header.size )
 				throw "Size changing";
-			if( s.bytes > chunk_size ) {
-				s.buffer.add(i.read(chunk_size));
-				s.bytes -= chunk_size;
+			if( s.bytes > read_chunk_size ) {
+				s.buffer.add(i.read(read_chunk_size));
+				s.bytes -= read_chunk_size;
 			} else {
 				s.buffer.add(i.read(s.bytes));
 				channels[h.channel] = null;

@@ -19,8 +19,8 @@ import hxvid.Client;
 
 class Server extends neko.net.ThreadServer<Client,RtmpMessage> {
 
-	public static var FLV_BUFFER_TIME : Float = 5;
-	public static var CLIENT_BUFFER_SIZE = (1 << 14); // 16 KB output buffer
+	public static var FLV_BUFFER_TIME : Float = 5; // 5 seconds of buffering
+	public static var CLIENT_BUFFER_SIZE = (1 << 16); // 64 KB output buffer
 	public static var BASE_DIR = "videos/";
 	static var CID = 0;
 

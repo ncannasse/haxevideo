@@ -1,7 +1,7 @@
 # Client
 -swf video.swf
 -swf-version 9
--main samples.Video
+-main samples.Main
 -debug
 
 
