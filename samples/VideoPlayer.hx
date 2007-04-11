@@ -16,7 +16,7 @@
 /* ************************************************************************ */
 package samples;
 
-class VideoPlayer extends flash.media.Video {
+class VideoPlayer extends Display {
 
 	var nc : flash.net.NetConnection;
 	var ns : flash.net.NetStream;
@@ -28,20 +28,35 @@ class VideoPlayer extends flash.media.Video {
 		this.file = file;
 		nc = new flash.net.NetConnection();
 		nc.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
+		this.addEventListener(flash.events.KeyboardEvent.KEY_DOWN,onKey);
 		nc.connect(host);
 	}
 
+	function onClick(e) {
+		if( ns == null )
+			return;
+		ns.togglePause();
+	}
+
+	function onKey( e : flash.events.KeyboardEvent ) {
+		trace(e.keyCode);
+	}
+
 	function onEvent(e) {
+		if( StringTools.startsWith(e.info.code,"NetStream.Buffer") )
+			return;
 		trace(e.info);
 		if( e.info.code == "NetConnection.Connect.Success" ) {
 			ns = new flash.net.NetStream(nc);
 			ns.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
-			attachNetStream(ns);
+			this.addEventListener(flash.events.MouseEvent.CLICK,onClick);
+			video.attachNetStream(ns);
+			//ns.receiveAudio(false);
 			ns.play(file);
 		}
 	}
 
-	public function stop() {
+	public function doStop() {
 		if( ns != null )
 			ns.close();
 		nc.close();

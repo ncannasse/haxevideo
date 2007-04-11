@@ -28,12 +28,15 @@ typedef RtmpMessage = {
 typedef RtmpStream = {
 	var id : Int;
 	var channel : Int;
+	var audio : Bool;
+	var video : Bool;
 	var play : {
 		var file : String;
 		var flv : neko.io.Input;
 		var startTime : Float;
 		var curTime : Int;
-		var blocked : Float;
+		var blocked : Null<Float>;
+		var paused : Null<Float>;
 	};
 	var record : {
 		var file : String;
@@ -108,7 +111,7 @@ class Client {
 				return null;
 			rtmp.i = new neko.io.StringInput(buf,pos,len);
 			var h = rtmp.readHeader();
-			state = WaitBody(h,rtmp.bodyLength(h));
+			state = WaitBody(h,rtmp.bodyLength(h,true));
 			return { msg : null, bytes : hsize };
 		case WaitBody(h,blen):
 			if( len < blen )
@@ -142,8 +145,29 @@ class Client {
 		return dir + file;
 	}
 
+	function getStream( h : RtmpHeader, ?play : Bool ) {
+		var s = streams[h.src_dst];
+		if( s == null || (play && s.play == null) )
+			error(h,"Invalid stream id "+h.src_dst);
+		return s;
+	}
+
+	function openFLV( file ) : neko.io.Input {
+		var flv;
+		try {
+			flv = neko.io.File.read(file,true);
+			Flv.readHeader(flv);
+		} catch( e : Dynamic ) {
+			if( flv != null ) {
+				flv.close();
+				throw "Corrupted FLV File '"+file+"'";
+			}
+			throw "FLV file not found '"+file+"'";
+		}
+		return flv;
+	}
+
 	public function processPacket( h : RtmpHeader, p : RtmpPacket ) {
-		//neko.Lib.print("#"+h.channel+(if( h.src_dst != null && h.src_dst != 0 ) ":" + h.src_dst else "")+" ");
 		switch( p ) {
 		case PCall(cmd,iid,args):
 			switch( cmd ) {
@@ -182,19 +206,36 @@ class Client {
 				if( args.length != 2 || args[0] != ANull || (file = Amf.string(args[1])) == null )
 					error(h,"Invalid 'play' arguments");
 				file = securize(h,file);
-				try {
-					trace("PLAY '"+file+"'");
-					flv = neko.io.File.read(file,true);
-					Flv.readHeader(flv);
-				} catch( e : Dynamic ) {
-					if( flv != null ) {
-						flv.close();
-						error(h,"Corrupted FLV File '"+file+"'");
-					}
-					error(h,"FLV file not found '"+file+"'");
-				}
+				trace("PLAY '"+file+"'");
 				s.channel = h.channel;
-				sendFLV(s,file,flv);
+				s.play = {
+					file : file,
+					flv : null,
+					startTime : null,
+					curTime : 0,
+					blocked : null,
+					paused : null,
+				};
+				seek(s,0);
+				rtmp.send(s.channel,PCall("onStatus",0,[
+					ANull,
+					Amf.encode({
+						level : "status",
+						code : "NetStream.Play.Reset",
+						description : "Resetting "+file+".",
+						details : file,
+						clientId : s.id
+					})
+				]),null,s.id);
+				rtmp.send(s.channel,PCall("onStatus",0,[
+					ANull,
+					Amf.encode({
+						level : "status",
+						code : "NetStream.Play.Start",
+						description : "Start playing "+file+".",
+						clientId : s.id
+					})
+				]),null,s.id);
 			case "deleteStream":
 				var stream;
 				if( args.length != 2 || args[0] != ANull || (stream = Amf.number(args[1])) == null )
@@ -222,6 +263,64 @@ class Client {
 					startTime : neko.Sys.time(),
 					flv : flv,
 				};
+			case "pause":
+				var s = getStream(h,true);
+				// Undefined arg = togglePause()
+				var pause = if( args[1] == AUndefined ) (s.play.paused == null) else Amf.bool(args[1]);
+				var time;
+				if( args.length != 3 || args[0] != ANull || pause == null || (time = Std.int(Amf.number(args[2]))) == null )
+					error(h,"Invalid 'pause' arguments");
+				if( pause ) {
+					trace("PAUSE "+s.id);
+					if( s.play.paused == null )
+						s.play.paused = neko.Sys.time();
+					rtmp.send(2,PCommand(s.id,CPlay));
+				} else {
+					trace("RESUME "+s.id);
+					if( s.play.paused != null ) {
+						s.play.paused = null;
+						seek(s,time);
+					}
+				}
+				rtmp.send(h.channel,PCall("_result",iid,[
+					ANull,
+					Amf.encode({
+						level : "status",
+						code : if( pause ) "NetStream.Pause.Notify" else "NetStream.Unpause.Notify",
+					})
+				]));
+			case "receiveAudio":
+				var s = getStream(h);
+				s.audio = Amf.bool(args[1]);
+			case "receiveVideo":
+				var s = getStream(h);
+				s.video = Amf.bool(args[1]);
+			case "closeStream":
+				var s = getStream(h);
+				trace("CLOSE "+s.id);
+				if( args.length != 1 || args[0] != ANull )
+					error(h,"Invalid 'closeStream' arguments");
+				closeStream(s);
+			case "seek":
+				var s = getStream(h,true);
+				var time;
+				if( args.length != 2 || args[0] != ANull || (time = Std.int(Amf.number(args[1]))) == null )
+					error(h,"Invalid 'seek' arguments");
+				seek(s,time);
+				rtmp.send(s.channel,PCall("_result",0,[
+					ANull,
+					Amf.encode({
+						level : "status",
+						code : "NetStream.Seek.Notify",
+					})
+				]),null,s.id);
+				rtmp.send(s.channel,PCall("onStatus",0,[
+					ANull,
+					Amf.encode({
+						level : "status",
+						code : "NetStream.Play.Start",
+					})
+				]),null,s.id);
 			default:
 				throw "Unknown command "+cmd+"("+args.join(",")+")";
 			}
@@ -254,69 +353,70 @@ class Client {
 			channel : null,
 			play : null,
 			record : null,
+			audio : true,
+			video : true,
 		};
 		streams[s.id] = s;
 		return s;
 	}
 
 	function closeStream( s : RtmpStream ) {
-		if( s.play != null )
+		if( s.play != null && s.play.flv != null )
 			s.play.flv.close();
 		if( s.record != null )
 			s.record.flv.close();
 		streams[s.id] = null;
 	}
 
-	function sendFLV( s : RtmpStream, file : String, flv : neko.io.Input ) {
+	function seek( s : RtmpStream, seekTime : Int ) {
+		// reset (compat with haxe 1.12)
+		var o : { private var bytes : Int; } = output;
+		o.bytes = 0;
+
+		// clear
+		rtmp.send(2,PCommand(s.id,CPlay));
 		rtmp.send(2,PCommand(s.id,CReset));
 		rtmp.send(2,PCommand(s.id,CClear));
-		rtmp.send(s.channel,PCall("onStatus",0,[
-			ANull,
-			Amf.encode({
-				level : "status",
-				code : "NetStream.Play.Reset",
-				description : "Resetting "+file+".",
-				details : file,
-				clientId : s.id
-			})
-		]),null,s.id);
-		rtmp.send(s.channel,PCall("onStatus",0,[
-			ANull,
-			Amf.encode({
-				level : "status",
-				code : "NetStream.Play.Start",
-				description : "Start playing "+file+".",
-				clientId : s.id
-			})
-		]),null,s.id);
-		s.play = {
-			file : file,
-			flv : flv,
-			startTime : neko.Sys.time() - Server.FLV_BUFFER_TIME,
-			curTime : 0,
-			blocked : null,
-		};
 
-		// send first audio + video chunk (with null timestamp)
-        var audio = true;
-        var video = true;
+		// reset infos
+		var p = s.play;
+		var now = neko.Sys.time();
+		p.startTime = now - Server.FLV_BUFFER_TIME - seekTime / 1000;
+		if( p.paused != null )
+			p.paused = now;
+		p.blocked = null;
+		if( p.flv != null )
+			p.flv.close();
+		p.flv = openFLV(p.file);
+
+		// prepare to send first audio + video chunk (with null timestamp)
+        var audio = s.audio;
+        var video = s.video;
+		var frames = new List();
 		while( true ) {
 			var c = Flv.readChunk(s.play.flv);
 			if( c == null )
 				break;
 			switch( c ) {
 			case FLVAudio(data,time):
-				rtmp.send(s.channel,PAudio(data),if( audio ) null else time,s.id);
-				if( audio )
-					audio = false;
-				else
-					break;
+				if( time < seekTime )
+					continue;
+				if( s.audio )
+					rtmp.send(s.channel,PAudio(data),if( audio ) null else time,s.id);
+				audio = false;
 			case FLVVideo(data,time):
-				rtmp.send(s.channel,PVideo(data),if( video ) null else time,s.id);
-				if( video )
-					video = false;
-				else
-					break;
+				var keyframe = Flv.isVideoKeyFrame(data);
+				if( keyframe )
+					frames = new List();
+				frames.add({ data : data, time : time});
+				if( time < seekTime )
+					continue;
+				if( s.video )
+					for( f in frames ) {
+						rtmp.send(s.channel,PVideo(f.data),if( video ) null else f.time,s.id);
+						video = false;
+					}
+				video = false;
 			case FLVMeta(data,time):
 				// skip
 			}
@@ -327,6 +427,8 @@ class Client {
 
 	public function playFLV( t : Float, s : RtmpStream ) {
 		var p = s.play;
+		if( p.paused != null )
+			return;
 		if( p.blocked != null ) {
 			output.flush();
 			if( output.writable() ) {
@@ -341,19 +443,23 @@ class Client {
 			if( c == null ) {
 				p.flv.close();
 				s.play = null;
+				// TODO : notice the client
 				break;
 			}
 			switch( c ) {
 			case FLVAudio(data,time):
-				rtmp.send(s.channel,PAudio(data),time,s.id);
+				if( s.audio )
+					rtmp.send(s.channel,PAudio(data),time,s.id);
 				p.curTime = time;
 			case FLVVideo(data,time):
-				rtmp.send(s.channel,PVideo(data),time,s.id);
+				if( s.video )
+					rtmp.send(s.channel,PVideo(data),time,s.id);
 				p.curTime = time;
 			case FLVMeta(data,time):
 				// skip
 			}
 			if( !output.writable() ) {
+				trace("BUFFER FULL");
 				p.blocked = t;
 				break;
 			}

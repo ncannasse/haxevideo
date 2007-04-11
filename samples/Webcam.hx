@@ -16,7 +16,7 @@
 /* ************************************************************************ */
 package samples;
 
-class Webcam extends flash.media.Video {
+class Webcam extends Display {
 
 	var file : String;
 	var nc : flash.net.NetConnection;
@@ -44,12 +44,12 @@ class Webcam extends flash.media.Video {
 			ns.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
 			ns.attachCamera(cam);
 			ns.attachAudio(mic);
-			attachCamera(cam);
+			video.attachCamera(cam);
 			ns.publish(file,"record");
 		}
 	}
 
-	public function stop() {
+	public function doStop() {
 		if( ns != null )
 			ns.close();
 		nc.close();

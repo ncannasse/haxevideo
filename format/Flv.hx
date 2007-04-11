@@ -84,4 +84,8 @@ class Flv {
 		ch.writeUInt32B(data.length + 11);
 	}
 
+	public static function isVideoKeyFrame( data : String ) {
+		return (data.charCodeAt(0) >> 4) == 1;
+	}
+
 }

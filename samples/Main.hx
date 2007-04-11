@@ -16,18 +16,18 @@
 /* ************************************************************************ */
 package samples;
 
-class Video {
+class Main {
 
 	static var host = "rtmp://localhost";
 	static var video = "test.flv";
 	static var record = "record.flv";
-	static var current : flash.display.DisplayObject = null;
+	static var current : Display = null;
 	static var trace : flash.text.TextField;
 	static var bpos : Float = 2;
 
 	static function select( mode ) {
 		if( current != null ) {
-			untyped current.stop();
+			current.doStop();
 			current.parent.removeChild(current);
 		}
 		var mc = flash.Lib.current;
@@ -39,6 +39,14 @@ class Video {
 		current.height = st.stageHeight - 20;
 		current.y = 20;
 		mc.addChild(current);
+	}
+
+	static function doClick( onClick, e ) {
+		try {
+			onClick();
+		} catch( e : Dynamic ) {
+			doTrace(e);
+		}
 	}
 
 	static function addButton( text, onClick ) {
@@ -61,7 +69,7 @@ class Video {
 		sb.downState = b;
 		sb.hitTestState = b;
 		sb.useHandCursor = true;
-		sb.addEventListener(flash.events.MouseEvent.CLICK,function(e) { onClick(); });
+		sb.addEventListener(flash.events.MouseEvent.CLICK,callback(doClick,onClick));
 		flash.Lib.current.addChild(sb);
 
 		sb.x = bpos;
@@ -78,6 +86,7 @@ class Video {
 		trace.height = mc.stage.stageHeight - 20;
 		trace.selectable = false;
 		trace.textColor = 0xFFFFFF;
+		trace.mouseEnabled = false;
 		trace.filters = [new flash.filters.GlowFilter(0x7F7F7F,90,2,2,10)];
 	}
 
