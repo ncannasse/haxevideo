@@ -17,5 +17,6 @@ You can open the _video.html_ file to display the _videos/test.flv_ file in real
 
 Although the haXeVideo FLV server works for all Flash versions, displaying the _video.swf_ requires Flash Player 9, so make sure it is installed.
 
+= Troubleshooting =
 
-
+If the player can't connect to the server, try allowing access from the SWF by using the [http://www.macromedia.com/support/documentation/en/flashplayer/help/settings_manager04.html  Flash Settings Manager].
