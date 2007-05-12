@@ -14,6 +14,7 @@
       <file path="samples\Webcam.hx" />
     </dir>
     <file path="hxvid\Client.hx" />
+    <file path="hxvid\Commands.hx" />
     <file path="hxvid\Server.hx" />
   </files>
 </haxe>
