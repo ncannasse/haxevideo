@@ -80,7 +80,13 @@ class Server extends neko.net.ThreadServer<Client,RtmpMessage> {
 		if( port == null )
 			port = 1935;
 		neko.Lib.println("Starting haXe Video Server on "+server+":"+port);
-		s.run(server,port);
+		try {
+			s.run(server,port);
+		} catch( e : String ) {
+			if( e == "std@socket_bind" )
+				e = "Error : the port cannot be opened (already used by another server ?)";
+			neko.Lib.rethrow(e);
+		}
 	}
 
 }
