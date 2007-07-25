@@ -61,6 +61,8 @@ class Amf {
 			AUndefined;
 		case 0x07:
 			throw "Reference";
+		case 0x12:
+			AString( i.read(i.readUInt32B()) );
 		default:
 			throw "Unknown AMF "+id;
 		}
@@ -79,8 +81,13 @@ class Amf {
 			o.writeChar(0x01);
 			o.writeChar(if( b ) 1 else 0);
 		case AString(s):
-			o.writeChar(0x02);
-			o.writeUInt16B(s.length);
+			if( s.length <= 0xFFFF ) {
+				o.writeChar(0x02);
+				o.writeUInt16B(s.length);
+			} else {
+				o.writeChar(0x12);
+				o.writeUInt32B(s.length);
+			}
 			o.write(s);
 		case AObject(h,size):
 			if( size == null )
@@ -116,10 +123,18 @@ class Amf {
 				h.set(f,encode(Reflect.field(o,f)));
 			AObject(h);
 		case TClass(c):
-			if( c == cast String )
+			switch( c ) {
+			case cast String:
 				AString(o);
-			else
+			case cast Hash:
+				var o : Hash<Dynamic> = o;
+				var h = new Hash();
+				for( f in o.keys() )
+					h.set(f,encode(o.get(f)));
+				AObject(h);
+			default:
 				throw "Can't encode instance of "+Type.getClassName(c);
+			}
 		default:
 			throw "Can't encode "+Std.string(o);
 		}
