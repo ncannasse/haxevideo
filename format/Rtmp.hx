@@ -114,7 +114,9 @@ class Rtmp {
 	}
 
 	public function readHandshake() {
-		return i.read(HANDSHAKE_SIZE);
+		var uptime = i.readUInt32B();
+		var ping = i.readUInt32B();
+		return i.read(HANDSHAKE_SIZE - 8);
 	}
 
 	public function writeWelcome() {
@@ -122,6 +124,8 @@ class Rtmp {
 	}
 
 	public function writeHandshake( hs ) {
+		o.writeUInt32B(1); // uptime
+		o.writeUInt32B(1); // ping
 		o.write(hs);
 	}
 
