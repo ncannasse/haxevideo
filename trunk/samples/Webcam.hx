@@ -19,14 +19,16 @@ package samples;
 class Webcam extends Display {
 
 	var file : String;
+	var share : String;
 	var nc : flash.net.NetConnection;
 	var ns : flash.net.NetStream;
 	var cam : flash.media.Camera;
 	var mic : flash.media.Microphone;
 
-	public function new(host,file) {
+	public function new(host,file,?share) {
 		super();
 		this.file = file;
+		this.share = share;
 		cam = flash.media.Camera.getCamera();
 		mic = flash.media.Microphone.getMicrophone();
 		if( cam == null )
@@ -45,7 +47,7 @@ class Webcam extends Display {
 			ns.attachCamera(cam);
 			ns.attachAudio(mic);
 			video.attachCamera(cam);
-			ns.publish(file,"record");
+			ns.publish(file,share);
 		}
 	}
 

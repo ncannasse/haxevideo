@@ -44,6 +44,7 @@ typedef RtmpStream = {
 		var curTime : Int;
 		var blocked : Null<Float>;
 		var paused : Null<Float>;
+		var cache : List<{ data : String, time : Int, audio : Bool }>;
 	};
 	var record : {
 		var file : String;
@@ -64,20 +65,20 @@ class Client {
 	static var file_security = ~/^[A-Za-z0-9_-][A-Za-z0-9_\/-]*(\.flv)?$/;
 
 	public var socket : neko.net.Socket;
+	var server : Server;
 	var rtmp : Rtmp;
 	var state : ClientState;
-	var output : neko.net.SocketBufferedOutput;
 	var streams : Array<RtmpStream>;
 	var dir : String;
 	var commands : Commands<CommandInfos>;
 
-	public function new( s ) {
+	public function new( serv, s ) {
+		server = serv;
 		socket = s;
 		dir = Server.BASE_DIR;
-		output = new neko.net.SocketBufferedOutput(socket,Server.CLIENT_BUFFER_SIZE);
 		state = WaitHandshake;
 		streams = new Array();
-		rtmp = new Rtmp(null,output);
+		rtmp = new Rtmp(null,socket.output);
 		commands = new Commands();
 		initializeCommands();
 	}
@@ -87,7 +88,7 @@ class Client {
 		commands.add1("createStream",cmdCreateStream,T.Null);
 		commands.add2("play",cmdPlay,T.Null,T.String);
 		commands.add2("deleteStream",cmdDeleteStream,T.Null,T.Int);
-		commands.add3("publish",cmdPublish,T.Null,T.String,T.String);
+		commands.add3("publish",cmdPublish,T.Null,T.String,T.Opt(T.String));
 		commands.add3("pause",cmdPause,T.Null,T.Opt(T.Bool),T.Int);
 		commands.add2("receiveAudio",cmdReceiveAudio,T.Null,T.Bool);
 		commands.add2("receiveVideo",cmdReceiveVideo,T.Null,T.Bool);
@@ -190,6 +191,7 @@ class Client {
 			curTime : 0,
 			blocked : null,
 			paused : null,
+			cache : null,
 		};
 		seek(s,0);
 		rtmp.send(s.channel,PCall("onStatus",0,[
@@ -220,12 +222,10 @@ class Client {
 		closeStream(s);
 	}
 
-	function cmdPublish( i : CommandInfos, _ : Void, file : String, record : String ) {
+	function cmdPublish( i : CommandInfos, _ : Void, file : String, shareName : String ) {
 		var s = streams[i.h.src_dst];
 		if( s == null || s.record != null )
 			error(i,"Invalid 'publish' streamid'");
-		if( record != "record" )
-			error(i,"Need 'record' argument");
 		file = securize(i,file);
 		var flv : neko.io.Output = neko.io.File.write(file,true);
 		Flv.writeHeader(flv);
@@ -350,10 +350,6 @@ class Client {
 	}
 
 	function seek( s : RtmpStream, seekTime : Int ) {
-		// reset (compat with haxe 1.12)
-		var o : { private var bytes : Int; } = output;
-		o.bytes = 0;
-
 		// clear
 		rtmp.send(2,PCommand(s.id,CPlay));
 		rtmp.send(2,PCommand(s.id,CReset));
@@ -369,11 +365,12 @@ class Client {
 		if( p.flv != null )
 			p.flv.close();
 		p.flv = openFLV(p.file);
+		p.cache = new List();
 
 		// prepare to send first audio + video chunk (with null timestamp)
         var audio = s.audio;
         var video = s.video;
-		var frames = new List();
+		var audioCache = null;
 		while( true ) {
 			var c = Flv.readChunk(s.play.flv);
 			if( c == null )
@@ -382,23 +379,17 @@ class Client {
 			case FLVAudio(data,time):
 				if( time < seekTime )
 					continue;
-				if( s.audio )
-					rtmp.send(s.channel,PAudio(data),if( audio ) 0 else time,s.id);
+				audioCache = { data : data, time : time, audio : true };
 				if( !audio )
 					break;
 				audio = false;
 			case FLVVideo(data,time):
 				var keyframe = Flv.isVideoKeyFrame(data);
 				if( keyframe )
-					frames = new List();
-				frames.add({ data : data, time : time });
+					p.cache = new List();
+				p.cache.add({ data : data, time : time, audio : false });
 				if( time < seekTime )
 					continue;
-				if( s.video )
-					for( f in frames ) {
-						rtmp.send(s.channel,PVideo(f.data),if( video ) 0 else f.time,s.id);
-						video = false;
-					}
 				if( !video )
 					break;
 				video = false;
@@ -408,6 +399,8 @@ class Client {
 			if( !audio && !video )
 				break;
 		}
+		if( audioCache != null )
+			p.cache.push(audioCache);
 	}
 
 	public function playFLV( t : Float, s : RtmpStream ) {
@@ -415,12 +408,30 @@ class Client {
 		if( p.paused != null )
 			return;
 		if( p.blocked != null ) {
-			output.flush();
-			if( output.writable() ) {
-				p.startTime += t - p.blocked;
-				p.blocked = null;
-			} else
-				return;
+			var delta = t - p.blocked;
+			p.startTime += delta;
+			p.blocked = null;
+		}
+		if( p.cache != null ) {
+			while( true ) {
+				var f = p.cache.pop();
+				if( f == null ) {
+					p.cache = null;
+					break;
+				}
+				if( f.audio ) {
+					if( s.audio )
+						rtmp.send(s.channel,PAudio(f.data),f.time,s.id);
+				} else {
+					if( s.video )
+						rtmp.send(s.channel,PVideo(f.data),f.time,s.id);
+				}
+				p.curTime = f.time;
+				if( server.isBlocking(socket) ) {
+					p.blocked = t;
+					return;
+				}
+			}
 		}
 		var reltime = Std.int((t - p.startTime) * 1000);
 		while( reltime > p.curTime ) {
@@ -429,7 +440,7 @@ class Client {
 				p.flv.close();
 				s.play = null;
 				// TODO : notice the client
-				break;
+				return;
 			}
 			switch( c ) {
 			case FLVAudio(data,time):
@@ -443,12 +454,12 @@ class Client {
 			case FLVMeta(data,time):
 				// skip
 			}
-			if( !output.writable() ) {
-				trace("BUFFER FULL");
+			if( server.isBlocking(socket) ) {
 				p.blocked = t;
-				break;
+				return;
 			}
 		}
+		server.wakeUp( socket, Server.FLV_BUFFER_TIME / 2 );
 	}
 
 	public function updateTime( t : Float ) {
@@ -457,7 +468,7 @@ class Client {
 				playFLV(t,s);
 	}
 
-	public function stop() {
+	public function cleanup() {
 		for( s in streams )
 			if( s != null )
 				closeStream(s);
