@@ -17,61 +17,44 @@
 package hxvid;
 import hxvid.Client;
 
-class Server extends neko.net.ThreadServer<Client,RtmpMessage> {
+class Server extends RealtimeServer<Client> {
 
 	public static var FLV_BUFFER_TIME : Float = 5; // 5 seconds of buffering
-	public static var CLIENT_BUFFER_SIZE = (1 << 16); // 64 KB output buffer
+	public static var CLIENT_BUFFER_SIZE = (1 << 18); // 256 KB buffer
 	public static var BASE_DIR = "videos/";
 	static var CID = 0;
 
-	var clients : List<Client>;
-
-	function new() {
-		super();
-		clients = new List();
-		updateTime = 0.1;
+	public override function clientConnected( s : neko.net.Socket ) {
+		return new Client(this,s);
 	}
 
-	public function clientConnected(s : neko.net.Socket) {
-		var c = new Client(s);
-		clients.add(c);
-		return c;
+	public override function clientDisconnected( c : Client ) {
+		c.cleanup();
 	}
 
-	public function clientDisconnected( c : Client ) {
-		c.stop();
-		clients.remove(c);
+	public override function readClientMessage( c : Client, buf : String, pos : Int, len : Int ) {
+		var m = c.readProgressive(buf,pos,len);
+		if( m == null )
+			return null;
+		if( m.msg != null )
+			c.processPacket(m.msg.header,m.msg.packet);
+		return m.bytes;
 	}
 
-	public function clientMessage( c : Client, msg : RtmpMessage ) {
-		if( msg != null ) {
-			try {
-				c.processPacket(msg.header,msg.packet);
-			} catch( e : Dynamic ) {
-				stopClient(c.socket);
-				logError(e);
-			}
-		}
+	public override function clientFillBuffer( c : Client ) {
+		c.updateTime(neko.Sys.time());
 	}
 
-	public function readClientMessage( c : Client, buf : String, pos : Int, len : Int ) {
-		return c.readProgressive(buf,pos,len);
-	}
-
-	public function afterEvent() {
-		var mst = neko.Sys.time();
-		for( c in clients )
-			try {
-				c.updateTime(mst);
-			} catch( e : Dynamic ) {
-				c.stop();
-				stopClient(c.socket);
-				logError(e);
-			}
+	public override function clientWakeUp( c : Client ) {
+		c.updateTime(neko.Sys.time());
 	}
 
 	static function main() {
 		var s = new Server();
+		s.config.writeBufferSize = CLIENT_BUFFER_SIZE;
+		s.config.blockingBytes = CLIENT_BUFFER_SIZE >> 2;
+		if( s.config.blockingBytes < (1 << 16) ) // 64 KB
+			s.config.blockingBytes = (1 << 16);
 		var args = neko.Sys.args();
 		var server = args[0];
 		var port = Std.parseInt(args[1]);

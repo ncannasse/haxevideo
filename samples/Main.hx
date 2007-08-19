@@ -18,9 +18,10 @@ package samples;
 
 class Main {
 
-	static var host = "rtmp://localhost";
+	static var host = "rtmp://192.168.0.1";
 	static var video = "test.flv";
 	static var record = "record.flv";
+	static var share = "shareName";
 	static var current : Display = null;
 	static var trace : flash.text.TextField;
 	static var bpos : Float = 2;
@@ -100,8 +101,9 @@ class Main {
 		haxe.Log.trace = doTrace;
 		flash.net.NetConnection.defaultObjectEncoding = flash.net.ObjectEncoding.AMF0;
 		addButton("Play Test Video",function() { select(new VideoPlayer(host,video)); });
-		addButton("Record Cam",function() { select(new Webcam(host,record)); });
+		addButton("Record Cam",function() { select(new Webcam(host,record,share)); });
 		addButton("Play Rec. Video",function() { select(new VideoPlayer(host,record)); });
+		addButton("View Cam",function() { select(new VideoPlayer(host,"#"+share)); });
 		addButton("Stop",function() { select(null); });
 		addButton("Clear Log",function() { trace.text = ""; });
 	}
