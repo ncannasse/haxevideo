@@ -18,7 +18,6 @@ package samples;
 
 class Main {
 
-	static var host = "rtmp://192.168.0.1";
 	static var video = "test.flv";
 	static var record = "record.flv";
 	static var share = "shareName";
@@ -99,6 +98,7 @@ class Main {
 	static function main() {
 		initTrace();
 		haxe.Log.trace = doTrace;
+		var host = "rtmp://"+flash.Lib.current.loaderInfo.parameters.host;
 		flash.net.NetConnection.defaultObjectEncoding = flash.net.ObjectEncoding.AMF0;
 		addButton("Play Test Video",function() { select(new VideoPlayer(host,video)); });
 		addButton("Record Cam",function() { select(new Webcam(host,record,share)); });
