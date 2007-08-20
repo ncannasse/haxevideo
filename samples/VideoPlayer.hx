@@ -28,7 +28,6 @@ class VideoPlayer extends Display {
 		this.file = file;
 		nc = new flash.net.NetConnection();
 		nc.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
-		this.addEventListener(flash.events.KeyboardEvent.KEY_DOWN,onKey);
 		nc.connect(host);
 	}
 
@@ -39,7 +38,19 @@ class VideoPlayer extends Display {
 	}
 
 	function onKey( e : flash.events.KeyboardEvent ) {
-		trace(e.keyCode);
+		switch( e.keyCode ) {
+		case 39: // RIGHT
+			ns.seek(ns.time + 30);
+		default:
+			trace("KEY "+e.keyCode);
+		}
+	}
+
+	function onMetaData( data : Dynamic ) {
+		// copy fields so they will be displayed nicely
+		// for some reason, 'data' is an Array
+		var metas = Reflect.copy(data);
+		trace("META "+Std.string(metas));
 	}
 
 	function onEvent(e) {
@@ -50,13 +61,16 @@ class VideoPlayer extends Display {
 			ns = new flash.net.NetStream(nc);
 			ns.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
 			this.addEventListener(flash.events.MouseEvent.CLICK,onClick);
+			this.stage.addEventListener(flash.events.KeyboardEvent.KEY_DOWN,onKey);
 			video.attachNetStream(ns);
+			ns.client = { onMetaData : onMetaData };
 			//ns.receiveAudio(false);
 			ns.play(file);
 		}
 	}
 
 	public function doStop() {
+		stage.removeEventListener(flash.events.KeyboardEvent.KEY_DOWN,onKey);
 		if( ns != null )
 			ns.close();
 		nc.close();

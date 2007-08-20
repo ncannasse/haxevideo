@@ -44,7 +44,7 @@ typedef RtmpStream = {
 		var curTime : Int;
 		var blocked : Null<Float>;
 		var paused : Null<Float>;
-		var cache : List<{ data : String, time : Int, audio : Bool }>;
+		var cache : List<{ data : RtmpPacket, time : Int }>;
 	};
 	var record : {
 		var file : String;
@@ -96,14 +96,14 @@ class Client {
 		commands.add2("seek",cmdSeek,T.Null,T.Int);
 	}
 
-	function addData( h : RtmpHeader, data : String, audio : Bool ) {
+	function addData( h : RtmpHeader, data : String, kind ) {
 		var s = streams[h.src_dst];
 		if( s == null )
 			throw "Unknown stream "+h.src_dst;
 		if( s.record == null )
 			throw "Publish not done on stream "+h.src_dst;
 		var time = Std.int((neko.Sys.time() - s.record.startTime) * 1000);
-		var chunk = (if( audio ) FLVAudio else FLVVideo)(data,time);
+		var chunk = kind(data,time);
 		Flv.writeChunk(s.record.flv,chunk);
 	}
 
@@ -142,7 +142,7 @@ class Client {
 		} catch( e : Dynamic ) {
 			if( flv != null ) {
 				flv.close();
-				throw "Corrupted FLV File '"+file+"'";
+				neko.Lib.rethrow("Corrupted FLV File '"+file+"' ("+Std.string(e)+")");
 			}
 			throw "FLV file not found '"+file+"'";
 		}
@@ -176,6 +176,12 @@ class Client {
 		]));
 	}
 
+	function sendStatus( s : RtmpStream, status : String, infos : Dynamic ) {
+		infos.code = status;
+		infos.level = "status";
+		rtmp.send(s.channel,PCall("onStatus",0,[ANull,Amf.encode(infos)]),null,s.id);
+	}
+
 	function cmdPlay( i : CommandInfos, _ : Void, file : String ) {
 		var s = streams[i.h.src_dst];
 		if( s == null )
@@ -194,25 +200,15 @@ class Client {
 			cache : null,
 		};
 		seek(s,0);
-		rtmp.send(s.channel,PCall("onStatus",0,[
-			ANull,
-			Amf.encode({
-				level : "status",
-				code : "NetStream.Play.Reset",
-				description : "Resetting "+file+".",
-				details : file,
-				clientId : s.id
-			})
-		]),null,s.id);
-		rtmp.send(s.channel,PCall("onStatus",0,[
-			ANull,
-			Amf.encode({
-				level : "status",
-				code : "NetStream.Play.Start",
-				description : "Start playing "+file+".",
-				clientId : s.id
-			})
-		]),null,s.id);
+		sendStatus(s,"NetStream.Play.Reset",{
+			description : "Resetting "+file+".",
+			details : file,
+			clientId : s.id
+		});
+		sendStatus(s,"NetStream.Play.Start",{
+			description : "Start playing "+file+".",
+			clientId : s.id
+		});
 	}
 
 	function cmdDeleteStream( i : CommandInfos, _ : Void, stream : Int ) {
@@ -284,13 +280,9 @@ class Client {
 				code : "NetStream.Seek.Notify",
 			})
 		]),null,s.id);
-		rtmp.send(s.channel,PCall("onStatus",0,[
-			ANull,
-			Amf.encode({
-				level : "status",
-				code : "NetStream.Play.Start",
-			})
-		]),null,s.id);
+		sendStatus(s,"NetStream.Play.Start",{
+			time : time
+		});
 	}
 
 	public function processPacket( h : RtmpHeader, p : RtmpPacket ) {
@@ -306,9 +298,11 @@ class Client {
 			if( !commands.execute(cmd,infos,args) )
 				throw "Mismatch arguments for '"+cmd+"' : "+Std.string(args);
 		case PAudio(data):
-			addData(h,data,true);
+			addData(h,data,FLVAudio);
 		case PVideo(data):
-			addData(h,data,false);
+			addData(h,data,FLVVideo);
+		case PMeta(data):
+			addData(h,data,FLVMeta);
 		case PCommand(sid,cmd):
 			trace("COMMAND "+Std.string(cmd)+":"+sid);
 		case PBytesReaded(b):
@@ -371,6 +365,7 @@ class Client {
         var audio = s.audio;
         var video = s.video;
 		var audioCache = null;
+		var metaCache = null;
 		while( true ) {
 			var c = Flv.readChunk(s.play.flv);
 			if( c == null )
@@ -379,7 +374,7 @@ class Client {
 			case FLVAudio(data,time):
 				if( time < seekTime )
 					continue;
-				audioCache = { data : data, time : time, audio : true };
+				audioCache = { data : PAudio(data), time : time };
 				if( !audio )
 					break;
 				audio = false;
@@ -387,20 +382,31 @@ class Client {
 				var keyframe = Flv.isVideoKeyFrame(data);
 				if( keyframe )
 					p.cache = new List();
-				p.cache.add({ data : data, time : time, audio : false });
+				if( s.video )
+					p.cache.add({ data : PVideo(data), time : time });
 				if( time < seekTime )
 					continue;
 				if( !video )
 					break;
 				video = false;
 			case FLVMeta(data,time):
-				// skip
+				if( time < seekTime )
+					continue;
+				if( metaCache != null )
+					p.cache.add(metaCache);
+				metaCache = { data : PMeta(data), time : time };
+				if( seekTime != 0 ) {
+					p.cache.add(metaCache);
+					metaCache = null;
+				}
 			}
 			if( !audio && !video )
 				break;
 		}
-		if( audioCache != null )
+		if( s.audio && audioCache != null )
 			p.cache.push(audioCache);
+		if( seekTime == 0 && metaCache != null )
+			p.cache.push(metaCache);
 	}
 
 	public function playFLV( t : Float, s : RtmpStream ) {
@@ -419,13 +425,7 @@ class Client {
 					p.cache = null;
 					break;
 				}
-				if( f.audio ) {
-					if( s.audio )
-						rtmp.send(s.channel,PAudio(f.data),f.time,s.id);
-				} else {
-					if( s.video )
-						rtmp.send(s.channel,PVideo(f.data),f.time,s.id);
-				}
+				rtmp.send(s.channel,f.data,f.time,s.id);
 				p.curTime = f.time;
 				if( server.isBlocking(socket) ) {
 					p.blocked = t;
@@ -439,8 +439,11 @@ class Client {
 			if( c == null ) {
 				p.flv.close();
 				s.play = null;
-				// TODO : notice the client
-				return;
+/*				// this will abort the video before the end
+ 				sendStatus(s,"NetStream.Play.Stop",{ details : p.file });
+				rtmp.send(2,PCommand(s.id,CClear));
+				rtmp.send(2,PCommand(s.id,CReset));
+*/				return;
 			}
 			switch( c ) {
 			case FLVAudio(data,time):
@@ -452,7 +455,8 @@ class Client {
 					rtmp.send(s.channel,PVideo(data),time,s.id);
 				p.curTime = time;
 			case FLVMeta(data,time):
-				// skip
+				rtmp.send(s.channel,PMeta(data),time,s.id);
+				p.curTime = time;
 			}
 			if( server.isBlocking(socket) ) {
 				p.blocked = t;
