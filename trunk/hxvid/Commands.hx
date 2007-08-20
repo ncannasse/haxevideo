@@ -73,7 +73,7 @@ class Commands<T> {
 			if( v != null ) {
 				// sometimes, AMF sends floats that are not ints.
 				// We will assume a .001 precision here
-				var i = Std.int(v * 1000);
+				var i = Std.int(v * 1000 + 0.001);
 				if( i % 1000 != 0 )
 					v = null;
 				else

@@ -1,5 +1,5 @@
-﻿<haxe selected="1">
-  <output name="Client" mode="swf9" out="video.swf" class="samples.Main" lib="" cmd="" main="True" debug="True"></output>
+﻿<haxe selected="0">
+  <output name="Client" mode="swf9" out="video.swf" class="samples.Main" lib="" cmd="video.html" main="True" debug="True"></output>
   <output name="Server" mode="neko" out="server.n" class="hxvid.Server" lib="" cmd="server.bat" main="True" debug="False">--override</output>
   <files path="">
     <dir path="format">

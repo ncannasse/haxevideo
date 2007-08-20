@@ -21,6 +21,7 @@ enum RtmpKind {
 	KCall;
 	KVideo;
 	KAudio;
+	KMeta;
 	KChunkSize;
 	KBytesReaded;
 	KCommand;
@@ -41,6 +42,7 @@ enum RtmpPacket {
 	PCall( name : String, iid : Int, args : Array<AmfValue> );
 	PVideo( data : String );
 	PAudio( data : String );
+	PMeta( data : String );
 	PCommand( sid : Int, v : RtmpCommand );
 	PBytesReaded( nbytes : Int );
 	PUnknown( kind : Int, body : String );
@@ -69,6 +71,7 @@ class Rtmp {
 		case KCommand: 0x04;
 		case KAudio: 0x08;
 		case KVideo: 0x09;
+		case KMeta: 0x12;
 		case KCall: 0x14;
 		case KUnknown(b): b;
 		}
@@ -243,6 +246,9 @@ class Rtmp {
 		case PVideo(d):
 			data = d;
 			h.kind = KVideo;
+		case PMeta(d):
+			data = d;
+			h.kind = KMeta;
 		default:
 			throw "Can't send packet "+Std.string(p);
 		}
@@ -281,6 +287,8 @@ class Rtmp {
 			return PVideo(body);
 		case KAudio:
 			return PAudio(body);
+		case KMeta:
+			return PMeta(body);
 		case KCommand:
 			var i = new neko.io.StringInput(body);
 			var kind = i.readUInt16B();

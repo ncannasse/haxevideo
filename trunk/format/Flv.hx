@@ -30,12 +30,19 @@ class Flv {
 		if( ch.readChar() != 0x01 )
 			throw "Invalid version";
 		var flags = ch.readChar();
-		if( flags != 0x05 && flags != 0x01 )
-			throw "Invalid type flags";
-		if( ch.readUInt32B() != 0x09 )
-			throw "Invalid offset";
-		if( ch.readUInt32B() != 0 )
-			throw "Invalid prev 0";
+		if( flags & 0xF2 != 0 )
+			throw "Invalid type flags "+flags;
+		var offset = ch.readUInt32B();
+		if( offset != 0x09 )
+			throw "Invalid offset "+offset;
+		var prev = ch.readUInt32B();
+		if( prev != 0 )
+			throw "Invalid prev "+prev;
+		return {
+			hasAudio : (flags & 1) != 1,
+			hasVideo : (flags & 4) != 1,
+			hasMeta : (flags & 8) != 1,
+		};
 	}
 
 	public static function writeHeader( ch : neko.io.Output ) {

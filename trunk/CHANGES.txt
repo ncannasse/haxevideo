@@ -1,8 +1,9 @@
-TODO
-	send flv metadatas
-	produce metadatas on request
-	notice client of stream terminaison
+KNOWN THINGS TO FIX
+	properly notice client of stream terminaison
 	fix video timing after pause/seek
+	resume/seek does not seems to work with receiveAudio(false)
+
+TODO
 	thread manager
 	stream subscribing
 

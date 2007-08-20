@@ -21,6 +21,7 @@ enum AmfValue {
 	ABool( b : Bool );
 	AString( s : String );
 	AObject( fields : Hash<AmfValue>, ?size : Int );
+	ADate( d : Date );
 	AUndefined;
 	ANull;
 }
@@ -60,7 +61,11 @@ class Amf {
 		case 0x06:
 			AUndefined;
 		case 0x07:
-			throw "Reference";
+			throw "Not supported : Reference";
+		case 0x0B:
+			var time_ms = i.readDoubleB();
+			var tz_min = i.readUInt16B();
+			ADate( Date.fromTime(time_ms + tz_min * 60 * 1000.0) );
 		case 0x12:
 			AString( i.read(i.readUInt32B()) );
 		default:
@@ -108,6 +113,9 @@ class Amf {
 			o.writeChar(0x05);
 		case AUndefined:
 			o.writeChar(0x06);
+		case ADate(d):
+			o.writeDoubleB(d.getTime());
+			o.writeUInt16B(0); // loose TZ
 		}
 	}
 
