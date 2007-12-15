@@ -66,7 +66,7 @@ class Amf {
 			var time_ms = i.readDoubleB();
 			var tz_min = i.readUInt16B();
 			ADate( Date.fromTime(time_ms + tz_min * 60 * 1000.0) );
-		case 0x12:
+		case 0x0C:
 			AString( i.read(i.readUInt32B()) );
 		default:
 			throw "Unknown AMF "+id;
@@ -90,7 +90,7 @@ class Amf {
 				o.writeChar(0x02);
 				o.writeUInt16B(s.length);
 			} else {
-				o.writeChar(0x12);
+				o.writeChar(0x0C);
 				o.writeUInt32B(s.length);
 			}
 			o.write(s);
