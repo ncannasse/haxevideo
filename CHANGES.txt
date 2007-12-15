@@ -9,6 +9,7 @@ KNOWN THINGS TO FIX
 	life webcam streaming
 	metadata suport
 	NetStream.send is now correctly working
+	experimental shared object protocol
 
 2007-05-12: Beta3
 	added website

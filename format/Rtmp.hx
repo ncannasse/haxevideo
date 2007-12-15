@@ -16,6 +16,7 @@
 /* ************************************************************************ */
 package format;
 import format.Amf;
+import format.SharedObject;
 
 enum RtmpKind {
 	KCall;
@@ -25,6 +26,7 @@ enum RtmpKind {
 	KChunkSize;
 	KBytesReaded;
 	KCommand;
+	KShared;
 	KUnknown( v : Int );
 }
 
@@ -45,6 +47,7 @@ enum RtmpPacket {
 	PMeta( data : String );
 	PCommand( sid : Int, v : RtmpCommand );
 	PBytesReaded( nbytes : Int );
+	PShared( data : SOData );
 	PUnknown( kind : Int, body : String );
 }
 
@@ -72,6 +75,7 @@ class Rtmp {
 		case KAudio: 0x08;
 		case KVideo: 0x09;
 		case KMeta: 0x12;
+		case KShared: 0x13;
 		case KCall: 0x14;
 		case KUnknown(b): b;
 		}
@@ -254,6 +258,11 @@ class Rtmp {
 			s.writeUInt32B(n);
 			data = s.toString();
 			h.kind = KBytesReaded;
+		case PShared(so):
+			var s = new neko.io.StringOutput();
+			SharedObject.write(s,so);
+			data = s.toString();
+			h.kind = KShared;
 		case PUnknown(k,d):
 			data = d;
 			h.kind = KUnknown(k);
@@ -321,6 +330,9 @@ class Rtmp {
 				CUnknown(kind,a,b);
 			};
 			return PCommand(sid,cmd);
+		case KShared:
+			var so = SharedObject.read(new neko.io.StringInput(body));
+			return PShared(so);
 		case KUnknown(k):
 			return PUnknown(k,body);
 		case KChunkSize:
