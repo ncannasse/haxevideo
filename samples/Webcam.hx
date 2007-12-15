@@ -38,12 +38,16 @@ class Webcam extends Display {
 		nc.connect(host);
 	}
 
+	function onKey( e : flash.events.KeyboardEvent ) {
+		ns.send("onMetaData",{ keypress : e.keyCode });
+	}
 
 	function onEvent(e) {
 		trace(e.info);
 		if( e.info.code == "NetConnection.Connect.Success" ) {
 			ns = new flash.net.NetStream(nc);
 			ns.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
+			this.stage.addEventListener(flash.events.KeyboardEvent.KEY_DOWN,onKey);
 			ns.attachCamera(cam);
 			ns.attachAudio(mic);
 			video.attachCamera(cam);
@@ -52,6 +56,7 @@ class Webcam extends Display {
 	}
 
 	public function doStop() {
+		stage.removeEventListener(flash.events.KeyboardEvent.KEY_DOWN,onKey);
 		if( ns != null )
 			ns.close();
 		nc.close();

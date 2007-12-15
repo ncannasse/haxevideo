@@ -59,6 +59,7 @@ typedef RtmpStream = {
 		var lock : neko.vm.Lock;
 		var stream : RtmpStream;
 		var client : Client;
+		var paused : Null<Float>;
 	};
 }
 
@@ -128,11 +129,13 @@ class Client {
 		}
 		for( s in r.listeners ) {
 			s.shared.lock.wait();
-			if( s.cache == null ) {
-				s.cache = new List();
-				server.wakeUp(s.shared.client.socket,0);
+			if( s.shared.paused == null ) {
+				if( s.cache == null ) {
+					s.cache = new List();
+					server.wakeUp(s.shared.client.socket,0);
+				}
+				s.cache.add({ data : p, time : time });
 			}
-			s.cache.add({ data : p, time : time });
 			s.shared.lock.release();
 		}
 	}
@@ -231,21 +234,22 @@ class Client {
 				lock : new neko.vm.Lock(),
 				client : this,
 				stream : sh,
+				paused : null,
 			};
 			s.shared.lock.release();
 			sh.record.listeners.add(s);
 			globalLock.release();
-			return;
+		} else {
+			file = securize(i,file);
+			s.play = {
+				file : file,
+				flv : null,
+				startTime : null,
+				curTime : 0,
+				blocked : null,
+				paused : null,
+			};
 		}
-		file = securize(i,file);
-		s.play = {
-			file : file,
-			flv : null,
-			startTime : null,
-			curTime : 0,
-			blocked : null,
-			paused : null,
-		};
 		seek(s,0);
 		sendStatus(s,"NetStream.Play.Reset",{
 			description : "Resetting "+file+".",
@@ -296,16 +300,21 @@ class Client {
 	}
 
 	function cmdPause( i : CommandInfos, _ : Void, ?pause : Bool, time : Int ) {
-		var s = getStream(i,true);
+		var s = getStream(i);
+		var p : { paused : Null<Float> } = s.play;
+		if( p == null )
+			p = s.shared;
+		if( p == null )
+			return;
 		if( pause == null )
-			pause = (s.play.paused == null); // toggle
+			pause = (p.paused == null); // toggle
 		if( pause ) {
-			if( s.play.paused == null )
-				s.play.paused = neko.Sys.time();
+			if( p.paused == null )
+				p.paused = neko.Sys.time();
 			rtmp.send(2,PCommand(s.id,CPlay));
 		} else {
-			if( s.play.paused != null ) {
-				s.play.paused = null;
+			if( p.paused != null ) {
+				p.paused = null;
 				seek(s,time);
 			}
 		}
@@ -407,8 +416,6 @@ class Client {
 			if( s.record.shareName != null ) {
 				globalLock.wait();
 				sharedStreams.remove(s.record.shareName);
-				for( s in s.record.listeners )
-					s.shared = null;
 				globalLock.release();
 			}
 			s.record.flv.close();
@@ -428,6 +435,10 @@ class Client {
 		rtmp.send(2,PCommand(s.id,CPlay));
 		rtmp.send(2,PCommand(s.id,CReset));
 		rtmp.send(2,PCommand(s.id,CClear));
+
+		// no need to send more data for shared streams
+		if( s.shared != null )
+			return;
 
 		// reset infos
 		var p = s.play;
