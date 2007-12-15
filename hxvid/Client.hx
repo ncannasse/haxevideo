@@ -52,7 +52,8 @@ typedef RtmpStream = {
 		var flv : neko.io.Output;
 		var shareName : String;
 		var listeners : List<RtmpStream>;
-		var count : Int;
+		var bytes : Int;
+		var lastPing : Int;
 	};
 	var shared : {
 		var lock : neko.vm.Lock;
@@ -114,14 +115,18 @@ class Client {
 		var s = streams[h.src_dst];
 		if( s == null )
 			throw "Unknown stream "+h.src_dst;
-		if( s.record == null )
+		var r = s.record;
+		if( r == null )
 			throw "Publish not done on stream "+h.src_dst;
-		var time = Std.int((neko.Sys.time() - s.record.startTime) * 1000);
+		var time = Std.int((neko.Sys.time() - r.startTime) * 1000);
 		var chunk = kind(data,time);
-		Flv.writeChunk(s.record.flv,chunk);
-		s.record.count++;
-		neko.Lib.print("["+s.record.count+"]");
-		for( s in s.record.listeners ) {
+		Flv.writeChunk(r.flv,chunk);
+		r.bytes += data.length;
+		if( r.bytes - r.lastPing > 100000 ) {
+			rtmp.send(2,PBytesReaded(r.bytes));
+			r.lastPing = r.bytes;
+		}
+		for( s in r.listeners ) {
 			s.shared.lock.wait();
 			if( s.cache == null ) {
 				s.cache = new List();
@@ -274,7 +279,8 @@ class Client {
 			flv : flv,
 			shareName : null,
 			listeners : new List(),
-			count : 0,
+			bytes : 0,
+			lastPing : 0,
 		};
 		if( shareName != null ) {
 			globalLock.wait();

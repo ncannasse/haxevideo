@@ -5,7 +5,6 @@ KNOWN THINGS TO FIX
 
 TODO
 	add "send" support
-	fix bug : after ~7000 packets, webcam stop sending data
 
 2008-??-??: 1.0
 	handshake bugfix
