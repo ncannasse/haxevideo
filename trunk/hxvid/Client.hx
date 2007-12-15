@@ -379,6 +379,8 @@ class Client {
 			trace("COMMAND "+Std.string(cmd)+":"+sid);
 		case PBytesReaded(b):
 			//trace("BYTESREADED "+b);
+		case PShared(so):
+			trace("SHARED OBJECT "+Std.string(so));
 		case PUnknown(k,data):
 			trace("UNKNOWN "+k+" ["+data.length+"bytes]");
 		}

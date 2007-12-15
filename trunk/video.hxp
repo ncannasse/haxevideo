@@ -6,6 +6,7 @@
       <file path="format\Amf.hx" />
       <file path="format\Flv.hx" />
       <file path="format\Rtmp.hx" />
+      <file path="format\SharedObject.hx" />
     </dir>
     <dir path="samples">
       <file path="samples\Display.hx" />
