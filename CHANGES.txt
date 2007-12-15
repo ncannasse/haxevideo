@@ -1,16 +1,14 @@
 KNOWN THINGS TO FIX
 	properly notice client of stream terminaison
 	fix video timing after pause/seek
-	resume/seek does not seems to work with receiveAudio(false)
-
-TODO
-	add "send" support
 
 2008-??-??: 1.0
 	handshake bugfix
 	added big string, date and hash support for AMF
 	realtime server with correct buffer management
 	life webcam streaming
+	metadata suport
+	NetStream.send is now correctly working
 
 2007-05-12: Beta3
 	added website
