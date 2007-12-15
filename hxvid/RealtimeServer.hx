@@ -57,12 +57,12 @@ class RealtimeServer<Client> {
 		threads = new Array();
 		config = {
 			listenValue : 10,
-			connectLag : 0.5,
+			connectLag : 0.05,
 			minReadBufferSize : 1 << 10, // 1 KB
 			maxReadBufferSize : 1 << 16, // 64 KB
 			writeBufferSize : 1 << 18, // 256 KB
 			blockingBytes : 1 << 17, // 128 KB
-			messageHeaderSize : 0,
+			messageHeaderSize : 1,
 			threadsCount : 10,
 		};
 	}

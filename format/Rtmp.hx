@@ -249,8 +249,14 @@ class Rtmp {
 		case PMeta(d):
 			data = d;
 			h.kind = KMeta;
-		default:
-			throw "Can't send packet "+Std.string(p);
+		case PBytesReaded(n):
+			var s = new neko.io.StringOutput();
+			s.writeUInt32B(n);
+			data = s.toString();
+			h.kind = KBytesReaded;
+		case PUnknown(k,d):
+			data = d;
+			h.kind = KUnknown(k);
 		}
 		h.size = data.length;
 		// write packet header + data

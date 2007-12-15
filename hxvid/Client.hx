@@ -37,6 +37,7 @@ typedef RtmpStream = {
 	var channel : Int;
 	var audio : Bool;
 	var video : Bool;
+	var cache : List<{ data : RtmpPacket, time : Int }>;
 	var play : {
 		var file : String;
 		var flv : neko.io.Input;
@@ -44,12 +45,19 @@ typedef RtmpStream = {
 		var curTime : Int;
 		var blocked : Null<Float>;
 		var paused : Null<Float>;
-		var cache : List<{ data : RtmpPacket, time : Int }>;
 	};
 	var record : {
 		var file : String;
 		var startTime : Float;
 		var flv : neko.io.Output;
+		var shareName : String;
+		var listeners : List<RtmpStream>;
+		var count : Int;
+	};
+	var shared : {
+		var lock : neko.vm.Lock;
+		var stream : RtmpStream;
+		var client : Client;
 	};
 }
 
@@ -63,6 +71,12 @@ enum ClientState {
 class Client {
 
 	static var file_security = ~/^[A-Za-z0-9_-][A-Za-z0-9_\/-]*(\.flv)?$/;
+	static var globalLock = {
+		var l = new neko.vm.Lock();
+		l.release();
+		l;
+	}
+	static var sharedStreams = new Hash<RtmpStream>();
 
 	public var socket : neko.net.Socket;
 	var server : Server;
@@ -96,7 +110,7 @@ class Client {
 		commands.add2("seek",cmdSeek,T.Null,T.Int);
 	}
 
-	function addData( h : RtmpHeader, data : String, kind ) {
+	function addData( h : RtmpHeader, data : String, kind, p ) {
 		var s = streams[h.src_dst];
 		if( s == null )
 			throw "Unknown stream "+h.src_dst;
@@ -105,6 +119,17 @@ class Client {
 		var time = Std.int((neko.Sys.time() - s.record.startTime) * 1000);
 		var chunk = kind(data,time);
 		Flv.writeChunk(s.record.flv,chunk);
+		s.record.count++;
+		neko.Lib.print("["+s.record.count+"]");
+		for( s in s.record.listeners ) {
+			s.shared.lock.wait();
+			if( s.cache == null ) {
+				s.cache = new List();
+				server.wakeUp(s.shared.client.socket,0);
+			}
+			s.cache.add({ data : p, time : time });
+			s.shared.lock.release();
+		}
 	}
 
 	function error( i : CommandInfos, msg : String ) {
@@ -188,8 +213,26 @@ class Client {
 			error(i,"Unknown 'play' channel");
 		if( s.play != null )
 			error(i,"This channel is already playing a FLV");
-		file = securize(i,file);
 		s.channel = i.h.channel;
+		if( file.charAt(0) == '#' ) {
+			file = file.substr(1);
+			globalLock.wait();
+			var sh = sharedStreams.get(file);
+			if( sh == null ) {
+				globalLock.release();
+				error(i,"Unknown shared stream '"+file+"'");
+			}
+			s.shared = {
+				lock : new neko.vm.Lock(),
+				client : this,
+				stream : sh,
+			};
+			s.shared.lock.release();
+			sh.record.listeners.add(s);
+			globalLock.release();
+			return;
+		}
+		file = securize(i,file);
 		s.play = {
 			file : file,
 			flv : null,
@@ -197,7 +240,6 @@ class Client {
 			curTime : 0,
 			blocked : null,
 			paused : null,
-			cache : null,
 		};
 		seek(s,0);
 		sendStatus(s,"NetStream.Play.Reset",{
@@ -225,11 +267,26 @@ class Client {
 		file = securize(i,file);
 		var flv : neko.io.Output = neko.io.File.write(file,true);
 		Flv.writeHeader(flv);
+		s.channel = i.h.channel;
 		s.record = {
 			file : file,
 			startTime : neko.Sys.time(),
 			flv : flv,
+			shareName : null,
+			listeners : new List(),
+			count : 0,
 		};
+		if( shareName != null ) {
+			globalLock.wait();
+			if( sharedStreams.exists(shareName) ) {
+				globalLock.release();
+				error(i,"The stream '"+shareName+"' is already shared by another user");
+			}
+			sharedStreams.set(shareName,s);
+			s.record.shareName = shareName;
+			globalLock.release();
+		}
+		sendStatus(s,"NetStream.Publish.Start",{ details : file });
 	}
 
 	function cmdPause( i : CommandInfos, _ : Void, ?pause : Bool, time : Int ) {
@@ -298,11 +355,11 @@ class Client {
 			if( !commands.execute(cmd,infos,args) )
 				throw "Mismatch arguments for '"+cmd+"' : "+Std.string(args);
 		case PAudio(data):
-			addData(h,data,FLVAudio);
+			addData(h,data,FLVAudio,p);
 		case PVideo(data):
-			addData(h,data,FLVVideo);
+			addData(h,data,FLVVideo,p);
 		case PMeta(data):
-			addData(h,data,FLVMeta);
+			addData(h,data,FLVMeta,p);
 		case PCommand(sid,cmd):
 			trace("COMMAND "+Std.string(cmd)+":"+sid);
 		case PBytesReaded(b):
@@ -330,6 +387,8 @@ class Client {
 			record : null,
 			audio : true,
 			video : true,
+			shared : null,
+			cache : null,
 		};
 		streams[s.id] = s;
 		return s;
@@ -338,8 +397,23 @@ class Client {
 	function closeStream( s : RtmpStream ) {
 		if( s.play != null && s.play.flv != null )
 			s.play.flv.close();
-		if( s.record != null )
+		if( s.record != null ) {
+			if( s.record.shareName != null ) {
+				globalLock.wait();
+				sharedStreams.remove(s.record.shareName);
+				for( s in s.record.listeners )
+					s.shared = null;
+				globalLock.release();
+			}
 			s.record.flv.close();
+		}
+		if( s.shared != null ) {
+			globalLock.wait();
+			// on more check in case our shared stream just closed
+			if( s.shared != null )
+				s.shared.stream.record.listeners.remove(s);
+			globalLock.release();
+		}
 		streams[s.id] = null;
 	}
 
@@ -359,7 +433,7 @@ class Client {
 		if( p.flv != null )
 			p.flv.close();
 		p.flv = openFLV(p.file);
-		p.cache = new List();
+		s.cache = new List();
 
 		// prepare to send first audio + video chunk (with null timestamp)
         var audio = s.audio;
@@ -381,9 +455,9 @@ class Client {
 			case FLVVideo(data,time):
 				var keyframe = Flv.isVideoKeyFrame(data);
 				if( keyframe )
-					p.cache = new List();
+					s.cache = new List();
 				if( s.video )
-					p.cache.add({ data : PVideo(data), time : time });
+					s.cache.add({ data : PVideo(data), time : time });
 				if( time < seekTime )
 					continue;
 				if( !video )
@@ -393,10 +467,10 @@ class Client {
 				if( time < seekTime )
 					continue;
 				if( metaCache != null )
-					p.cache.add(metaCache);
+					s.cache.add(metaCache);
 				metaCache = { data : PMeta(data), time : time };
 				if( seekTime != 0 ) {
-					p.cache.add(metaCache);
+					s.cache.add(metaCache);
 					metaCache = null;
 				}
 			}
@@ -404,12 +478,33 @@ class Client {
 				break;
 		}
 		if( s.audio && audioCache != null )
-			p.cache.push(audioCache);
+			s.cache.push(audioCache);
 		if( seekTime == 0 && metaCache != null )
-			p.cache.push(metaCache);
+			s.cache.push(metaCache);
 	}
 
-	public function playFLV( t : Float, s : RtmpStream ) {
+	function playShared( s : RtmpStream ) {
+		s.shared.lock.wait();
+		try {
+			if( s.cache != null )
+				while( true ) {
+					var f = s.cache.pop();
+					if( f == null ) {
+						s.cache = null;
+						break;
+					}
+					rtmp.send(s.channel,f.data,f.time,s.id);
+					if( server.isBlocking(socket) )
+						break;
+				}
+		} catch( e : Dynamic ) {
+			s.shared.lock.release();
+			neko.Lib.rethrow(e);
+		}
+		s.shared.lock.release();
+	}
+
+	function playFLV( t : Float, s : RtmpStream ) {
 		var p = s.play;
 		if( p.paused != null )
 			return;
@@ -418,11 +513,11 @@ class Client {
 			p.startTime += delta;
 			p.blocked = null;
 		}
-		if( p.cache != null ) {
+		if( s.cache != null ) {
 			while( true ) {
-				var f = p.cache.pop();
+				var f = s.cache.pop();
 				if( f == null ) {
-					p.cache = null;
+					s.cache = null;
 					break;
 				}
 				rtmp.send(s.channel,f.data,f.time,s.id);
@@ -468,8 +563,12 @@ class Client {
 
 	public function updateTime( t : Float ) {
 		for( s in streams )
-			if( s != null && s.play != null )
-				playFLV(t,s);
+			if( s != null ) {
+				if( s.play != null )
+					playFLV(t,s);
+				else if( s.shared != null )
+					playShared(s);
+			}
 	}
 
 	public function cleanup() {
