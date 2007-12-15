@@ -4,13 +4,14 @@ KNOWN THINGS TO FIX
 	resume/seek does not seems to work with receiveAudio(false)
 
 TODO
-	thread manager
-	stream subscribing
+	add "send" support
+	fix bug : after ~7000 packets, webcam stop sending data
 
-2007-08-19: 1.0
+2008-??-??: 1.0
 	handshake bugfix
-	added big string and hash support
+	added big string, date and hash support for AMF
 	realtime server with correct buffer management
+	life webcam streaming
 
 2007-05-12: Beta3
 	added website

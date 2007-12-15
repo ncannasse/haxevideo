@@ -20,7 +20,7 @@ class Main {
 
 	static var video = "test.flv";
 	static var record = "record.flv";
-	static var share = "shareName";
+	static var share = "myWebCam";
 	static var current : Display = null;
 	static var trace : flash.text.TextField;
 	static var bpos : Float = 2;
