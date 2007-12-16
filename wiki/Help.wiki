@@ -45,7 +45,7 @@ Metadatas present in the FLV file are transmitted to the client reading the stre
 
 Once you have published a live stream, you can send live messages by using the _ns.send_ command. For example _ns.send("onMetaData",{ hello : "World" })_ will be similar as if some metadata was found in the FLV.
 
-== SharedObject ==
+== Shared Object ==
 
 Shared object is a persistent storage that can be used for storing some informations on the server. There is only untested protocol support for it right now, so it's not yet fully implemented.
 
