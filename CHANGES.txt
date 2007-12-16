@@ -2,7 +2,7 @@ KNOWN THINGS TO FIX
 	properly notice client of stream terminaison
 	fix video timing after pause/seek
 
-2008-??-??: 1.0
+2007-12-16: 1.0
 	handshake bugfix
 	added big string, date and hash support for AMF
 	realtime server with correct buffer management
@@ -10,6 +10,7 @@ KNOWN THINGS TO FIX
 	metadata suport
 	NetStream.send is now correctly working
 	experimental shared object protocol
+	created opening.flv
 
 2007-05-12: Beta3
 	added website
