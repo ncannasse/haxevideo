@@ -101,15 +101,21 @@ class Commands<T> {
 	function checkArgs( args : Array<AmfValue>, targs : Array<Dynamic> ) {
 		var ok = true;
 		var vargs = new Array<Dynamic>();
-		if( args.length != targs.length )
+		if( args.length > targs.length )
 			return null;
-		for( i in 0...targs.length ) {
+		for( i in 0...args.length ) {
 			var v = checkArg(args[i],targs[i]);
 			if( v == null )
 				return null;
 			if( v == VNull )
 				v = null;
 			vargs.push(v);
+		}
+		// optional args
+		for( i in args.length...targs.length ) {
+			if( !Std.is(targs[i],ArgSpecial) )
+				return null;
+			vargs.push(null);
 		}
 		return vargs;
 	}
