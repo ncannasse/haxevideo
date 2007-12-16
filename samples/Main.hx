@@ -103,7 +103,7 @@ class Main {
 		addButton("Play Test Video",function() { select(new VideoPlayer(host,video)); });
 		addButton("Record Cam",function() { select(new Webcam(host,record,share)); });
 		addButton("Play Rec. Video",function() { select(new VideoPlayer(host,record)); });
-		addButton("View Cam",function() { select(new VideoPlayer(host,"#"+share)); });
+		addButton("View Cam",function() { select(new VideoPlayer(host,share,true)); });
 		addButton("Stop",function() { select(null); });
 		addButton("Clear Log",function() { trace.text = ""; });
 	}

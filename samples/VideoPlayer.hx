@@ -21,11 +21,13 @@ class VideoPlayer extends Display {
 	var nc : flash.net.NetConnection;
 	var ns : flash.net.NetStream;
 	var file : String;
+	var live : Bool;
 
-	public function new(host,file) {
+	public function new(host,file,?live) {
 		super();
 		trace("Connecting...");
 		this.file = file;
+		this.live = live;
 		nc = new flash.net.NetConnection();
 		nc.addEventListener(flash.events.NetStatusEvent.NET_STATUS,onEvent);
 		nc.connect(host);
@@ -65,7 +67,7 @@ class VideoPlayer extends Display {
 			video.attachNetStream(ns);
 			ns.client = { onMetaData : onMetaData };
 			//ns.receiveAudio(false);
-			ns.play(file);
+			ns.play(if( live ) "#"+file else file);
 		}
 	}
 
