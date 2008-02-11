@@ -2,6 +2,9 @@ KNOWN THINGS TO FIX
 	properly notice client of stream terminaison
 	fix video timing after pause/seek
 
+2008-??-??: 1.1
+	fixed int32 overflow in handshake
+
 2007-12-16: 1.0
 	handshake bugfix
 	added big string, date and hash support for AMF
