@@ -1,9 +1,14 @@
+THINGS TO DO
+	allow to easily "produce" live streams (from playlist, etc...)
+	allow to create FLVS indexes for fast seeking
+
 KNOWN THINGS TO FIX
 	properly notice client of stream terminaison
 	fix video timing after pause/seek
 
 2008-??-??: 1.1
 	fixed int32 overflow in handshake
+	fixed thread socket sleep list concurrency
 
 2007-12-16: 1.0
 	handshake bugfix
