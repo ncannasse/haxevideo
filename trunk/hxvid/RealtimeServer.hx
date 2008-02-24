@@ -35,6 +35,12 @@ private typedef SocketInfos<Client> = {
 	var rbytes : Int;
 }
 
+private enum ThreadMessage {
+	Connect( s : Socket );
+	Disconnect( s : Socket );
+	Wakeup( s : Socket, delay : Float );
+}
+
 class RealtimeServer<Client> {
 
 	public var config : {
@@ -133,19 +139,31 @@ class RealtimeServer<Client> {
 		if( t.socks.length > 0 )
 			readWriteThread(t);
 		while( true ) {
-			var m : { s : neko.net.Socket, cnx : Bool } = neko.vm.Thread.readMessage(t.socks.length == 0);
-			if( m == null )
-				break;
-			if( m.cnx ) {
-				t.socks.push(m.s);
-				var inf = getInfos(m.s);
-				inf.client = clientConnected(m.s);
+			var m : ThreadMessage = neko.vm.Thread.readMessage(t.socks.length == 0);
+			if( m == null ) break;
+			switch( m ) {
+			case Connect(s):
+				t.socks.push(s);
+				var inf = getInfos(s);
+				inf.client = clientConnected(s);
 				if( t.socks.length >= 64 ) {
 					logError("Max clients per thread reached");
-					cleanup(t,m.s);
+					cleanup(t,s);
 				}
-			} else
-				cleanup(t,m.s);
+			case Disconnect(s):
+				cleanup(t,s);
+			case Wakeup(s,time):
+				var sl = t.sleeps;
+				var push = true;
+				for( i in 0...sl.length )
+					if( sl[i].time > time ) {
+						sl.insert(i,{ s : s, time : time });
+						push = false;
+						break;
+					}
+				if( push )
+					sl.push({ s : s, time : time });
+			}
 		}
 	}
 
@@ -203,7 +221,7 @@ class RealtimeServer<Client> {
 		s.output.writeChar = callback(writeClientChar,cinf);
 		s.output.writeBytes = callback(writeClientBytes,cinf);
 		s.custom = cinf;
-		cinf.thread.t.sendMessage({ s : s, cnx : true });
+		cinf.thread.t.sendMessage(Connect(s));
 	}
 
 	function getInfos( s : neko.net.Socket ) : SocketInfos<Client> {
@@ -289,20 +307,13 @@ class RealtimeServer<Client> {
 
 	public function wakeUp( s : neko.net.Socket, delay : Float ) {
 		var inf = getInfos(s);
-		var time = neko.Sys.time() + delay;
-		var sl = inf.thread.sleeps;
-		for( i in 0...sl.length )
-			if( sl[i].time > time ) {
-				sl.insert(i,{ s : s, time : time });
-				return;
-			}
-		sl.push({ s : s, time : time });
+		inf.thread.t.sendMessage(Wakeup(s,neko.Sys.time() + delay));
 	}
 
 	public function stopClient( s : neko.net.Socket ) {
 		var inf = getInfos(s);
 		try s.shutdown(true,true) catch( e : Dynamic ) { };
-		inf.thread.t.sendMessage({ s : s, cnx : false });
+		inf.thread.t.sendMessage(Disconnect(s));
 	}
 
 }
