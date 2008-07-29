@@ -28,29 +28,29 @@ enum AmfValue {
 
 class Amf {
 
-	public static function readWithCode( i : neko.io.Input, id ) {
+	public static function readWithCode( i : haxe.io.Input, id ) {
 		return switch( id ) {
 		case 0x00:
-			ANumber( i.readDoubleB() );
+			ANumber( i.readDouble() );
 		case 0x01:
 			ABool(
-				switch( i.readChar() ) {
+				switch( i.readByte() ) {
 				case 0: false;
 				case 1: true;
 				default: throw "Invalid AMF";
 				}
 			);
 		case 0x02:
-			AString( i.read(i.readUInt16B()) );
+			AString( i.readString(i.readUInt16()) );
 		case 0x03,0x08:
 			var h = new Hash();
 			var ismixed = (id == 0x08);
-			var size = if( ismixed ) i.readUInt32B() else null;
+			var size = if( ismixed ) i.readUInt30() else null;
 			while( true ) {
-				var c1 = i.readChar();
-				var c2 = i.readChar();
-				var name = i.read((c1 << 8) | c2);
-				var k = i.readChar();
+				var c1 = i.readByte();
+				var c2 = i.readByte();
+				var name = i.readString((c1 << 8) | c2);
+				var k = i.readByte();
 				if( k == 0x09 )
 					break;
 				h.set(name,readWithCode(i,k));
@@ -63,59 +63,59 @@ class Amf {
 		case 0x07:
 			throw "Not supported : Reference";
 		case 0x0B:
-			var time_ms = i.readDoubleB();
-			var tz_min = i.readUInt16B();
+			var time_ms = i.readDouble();
+			var tz_min = i.readUInt16();
 			ADate( Date.fromTime(time_ms + tz_min * 60 * 1000.0) );
 		case 0x0C:
-			AString( i.read(i.readUInt32B()) );
+			AString( i.readString(i.readUInt30()) );
 		default:
 			throw "Unknown AMF "+id;
 		}
 	}
 
-	public static function read( i : neko.io.Input ) {
-		return readWithCode(i,i.readChar());
+	public static function read( i : haxe.io.Input ) {
+		return readWithCode(i,i.readByte());
 	}
 
-	public static function write( o : neko.io.Output, v : AmfValue ) {
+	public static function write( o : haxe.io.Output, v : AmfValue ) {
 		switch( v ) {
 		case ANumber(n):
-			o.writeChar(0x00);
-			o.writeDoubleB(n);
+			o.writeByte(0x00);
+			o.writeDouble(n);
 		case ABool(b):
-			o.writeChar(0x01);
-			o.writeChar(if( b ) 1 else 0);
+			o.writeByte(0x01);
+			o.writeByte(if( b ) 1 else 0);
 		case AString(s):
 			if( s.length <= 0xFFFF ) {
-				o.writeChar(0x02);
-				o.writeUInt16B(s.length);
+				o.writeByte(0x02);
+				o.writeUInt16(s.length);
 			} else {
-				o.writeChar(0x0C);
-				o.writeUInt32B(s.length);
+				o.writeByte(0x0C);
+				o.writeUInt30(s.length);
 			}
-			o.write(s);
+			o.writeString(s);
 		case AObject(h,size):
 			if( size == null )
-				o.writeChar(0x03);
+				o.writeByte(0x03);
 			else {
-				o.writeChar(0x08);
-				o.writeUInt32B(size);
+				o.writeByte(0x08);
+				o.writeUInt30(size);
 			}
 			for( f in h.keys() ) {
-				o.writeUInt16B(f.length);
-				o.write(f);
+				o.writeUInt16(f.length);
+				o.writeString(f);
 				write(o,h.get(f));
 			}
-			o.writeChar(0);
-			o.writeChar(0);
-			o.writeChar(0x09);
+			o.writeByte(0);
+			o.writeByte(0);
+			o.writeByte(0x09);
 		case ANull:
-			o.writeChar(0x05);
+			o.writeByte(0x05);
 		case AUndefined:
-			o.writeChar(0x06);
+			o.writeByte(0x06);
 		case ADate(d):
-			o.writeDoubleB(d.getTime());
-			o.writeUInt16B(0); // loose TZ
+			o.writeDouble(d.getTime());
+			o.writeUInt16(0); // loose TZ
 		}
 	}
 

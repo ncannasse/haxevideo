@@ -55,7 +55,7 @@ class Webcam extends Display {
 		}
 	}
 
-	public function doStop() {
+	public override function doStop() {
 		stage.removeEventListener(flash.events.KeyboardEvent.KEY_DOWN,onKey);
 		if( ns != null )
 			ns.close();

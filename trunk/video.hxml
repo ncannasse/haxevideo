@@ -1,6 +1,5 @@
 # Client
--swf video.swf
--swf-version 9
+-swf9 video.swf
 -main samples.Main
 -debug
 
@@ -9,4 +8,4 @@
 # Server
 -neko server.n
 -main hxvid.Server
---override
+

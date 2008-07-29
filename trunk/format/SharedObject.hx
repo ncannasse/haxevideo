@@ -42,19 +42,19 @@ typedef SOData = {
 
 class SharedObject {
 
-	static function readString( i : neko.io.Input ) {
-		return i.read(i.readUInt16B());
+	inline static function readString( i : haxe.io.Input ) {
+		return i.readString(i.readUInt16());
 	}
 
-	public static function read( i : neko.io.Input ) : SOData {
+	public static function read( i : haxe.io.Input ) : SOData {
 		var name = readString(i);
-		var ver = i.readUInt32B();
-		var persist = i.readUInt32B() == 2;
-		var unk = i.readUInt32B();
+		var ver = i.readUInt30();
+		var persist = i.readUInt30() == 2;
+		var unk = i.readUInt30();
 		var cmds = new List();
 		while( true ) {
-			var c = try i.readChar() catch( e : neko.io.Eof ) break;
-			var size = i.readUInt32B();
+			var c = try i.readByte() catch( e : haxe.io.Eof ) break;
+			var size = i.readUInt30();
 			var cmd = switch( c ) {
 			case 1:
 				SOConnect;
@@ -64,11 +64,12 @@ class SharedObject {
 				var name = readString(i);
 				SOSetAttribute(name,Amf.read(i));
 			case 4:
-				var values = new neko.io.StringInput(i.read(size));
+				var values = new haxe.io.BytesInput(i.read(size));
+				values.bigEndian = true;
 				var hash = new Hash();
 				while( true ) {
-					var size = try values.readUInt16B() catch( e : neko.io.Eof ) break;
-					var name = values.read(size);
+					var size = try values.readUInt16() catch( e : haxe.io.Eof ) break;
+					var name = values.readString(size);
 					hash.set(name,Amf.read(values));
 				}
 				SOUpdateData(hash);
@@ -99,12 +100,12 @@ class SharedObject {
 		};
 	}
 
-	static function writeString( o : neko.io.Output, s : String ) {
-		o.writeUInt16B(s.length);
-		o.write(s);
+	static function writeString( o : haxe.io.Output, s : String ) {
+		o.writeUInt16(s.length);
+		o.writeString(s);
 	}
 
-	static function writeCommandData( o : neko.io.Output, cmd ) {
+	static function writeCommandData( o : haxe.io.Output, cmd ) {
 		switch( cmd ) {
 		case SOConnect,SODisconnect,SOClearData,SODeleteData,SOInitialData:
 			// nothing
@@ -128,18 +129,19 @@ class SharedObject {
 		}
 	}
 
-	public static function write( o : neko.io.Output, so : SOData ) {
-		o.writeUInt16B(so.name.length);
-		o.write(so.name);
-		o.writeUInt32B(so.version);
-		o.writeUInt32B(so.persist?2:0);
-		o.writeUInt32B(so.unknown);
+	public static function write( o : haxe.io.Output, so : SOData ) {
+		o.writeUInt16(so.name.length);
+		o.writeString(so.name);
+		o.writeUInt30(so.version);
+		o.writeUInt30(so.persist?2:0);
+		o.writeUInt30(so.unknown);
 		for( cmd in so.commands ) {
-			o.writeChar( Type.enumIndex(cmd) + 1 );
-			var s = new neko.io.StringOutput();
+			o.writeByte( Type.enumIndex(cmd) + 1 );
+			var s = new haxe.io.BytesOutput();
+			s.bigEndian = true;
 			writeCommandData(s,cmd);
-			var data = s.toString();
-			o.writeUInt32B(data.length);
+			var data = s.getBytes();
+			o.writeUInt30(data.length);
 			o.write(data);
 		}
 	}

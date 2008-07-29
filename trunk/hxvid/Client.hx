@@ -40,7 +40,7 @@ typedef RtmpStream = {
 	var cache : List<{ data : RtmpPacket, time : Int }>;
 	var play : {
 		var file : String;
-		var flv : neko.io.Input;
+		var flv : haxe.io.Input;
 		var startTime : Float;
 		var curTime : Int;
 		var blocked : Null<Float>;
@@ -49,14 +49,14 @@ typedef RtmpStream = {
 	var record : {
 		var file : String;
 		var startTime : Float;
-		var flv : neko.io.Output;
+		var flv : haxe.io.Output;
 		var shareName : String;
 		var listeners : List<RtmpStream>;
 		var bytes : Int;
 		var lastPing : Int;
 	};
 	var shared : {
-		var lock : neko.vm.Lock;
+		var lock : neko.vm.Mutex;
 		var stream : RtmpStream;
 		var client : Client;
 		var paused : Null<Float>;
@@ -65,7 +65,7 @@ typedef RtmpStream = {
 
 enum ClientState {
 	WaitHandshake;
-	WaitHandshakeResponse( hs : String );
+	WaitHandshakeResponse( hs : haxe.io.Bytes );
 	Ready;
 	WaitBody( h : RtmpHeader, blen : Int );
 }
@@ -73,11 +73,7 @@ enum ClientState {
 class Client {
 
 	static var file_security = ~/^[A-Za-z0-9_-][A-Za-z0-9_\/-]*(\.flv)?$/;
-	static var globalLock = {
-		var l = new neko.vm.Lock();
-		l.release();
-		l;
-	}
+	static var globalLock = new neko.vm.Mutex();
 	static var sharedStreams = new Hash<RtmpStream>();
 
 	public var socket : neko.net.Socket;
@@ -94,6 +90,7 @@ class Client {
 		dir = Server.BASE_DIR;
 		state = WaitHandshake;
 		streams = new Array();
+		socket.output.bigEndian = true;
 		rtmp = new Rtmp(null,socket.output);
 		commands = new Commands();
 		initializeCommands();
@@ -112,7 +109,7 @@ class Client {
 		commands.add2("seek",cmdSeek,T.Null,T.Int);
 	}
 
-	function addData( h : RtmpHeader, data : String, kind, p ) {
+	function addData( h : RtmpHeader, data : haxe.io.Bytes, kind, p ) {
 		var s = streams[h.src_dst];
 		if( s == null )
 			throw "Unknown stream "+h.src_dst;
@@ -128,7 +125,7 @@ class Client {
 			r.lastPing = r.bytes;
 		}
 		for( s in r.listeners ) {
-			s.shared.lock.wait();
+			s.shared.lock.acquire();
 			if( s.shared.paused == null ) {
 				if( s.cache == null ) {
 					s.cache = new List();
@@ -167,8 +164,8 @@ class Client {
 		return s;
 	}
 
-	function openFLV( file ) : neko.io.Input {
-		var flv;
+	function openFLV( file ) : haxe.io.Input {
+		var flv = null;
 		try {
 			flv = neko.io.File.read(file,true);
 			Flv.readHeader(flv);
@@ -224,19 +221,18 @@ class Client {
 		s.channel = i.h.channel;
 		if( file.charAt(0) == '#' ) {
 			file = file.substr(1);
-			globalLock.wait();
+			globalLock.acquire();
 			var sh = sharedStreams.get(file);
 			if( sh == null ) {
 				globalLock.release();
 				error(i,"Unknown shared stream '"+file+"'");
 			}
 			s.shared = {
-				lock : new neko.vm.Lock(),
+				lock : new neko.vm.Mutex(),
 				client : this,
 				stream : sh,
 				paused : null,
 			};
-			s.shared.lock.release();
 			sh.record.listeners.add(s);
 			globalLock.release();
 		} else {
@@ -274,7 +270,7 @@ class Client {
 		if( s == null || s.record != null )
 			error(i,"Invalid 'publish' streamid'");
 		file = securize(i,file);
-		var flv : neko.io.Output = neko.io.File.write(file,true);
+		var flv : haxe.io.Output = neko.io.File.write(file,true);
 		Flv.writeHeader(flv);
 		s.channel = i.h.channel;
 		s.record = {
@@ -287,7 +283,7 @@ class Client {
 			lastPing : 0,
 		};
 		if( shareName != null ) {
-			globalLock.wait();
+			globalLock.acquire();
 			if( sharedStreams.exists(shareName) ) {
 				globalLock.release();
 				error(i,"The stream '"+shareName+"' is already shared by another user");
@@ -416,14 +412,14 @@ class Client {
 			s.play.flv.close();
 		if( s.record != null ) {
 			if( s.record.shareName != null ) {
-				globalLock.wait();
+				globalLock.acquire();
 				sharedStreams.remove(s.record.shareName);
 				globalLock.release();
 			}
 			s.record.flv.close();
 		}
 		if( s.shared != null ) {
-			globalLock.wait();
+			globalLock.acquire();
 			// on more check in case our shared stream just closed
 			if( s.shared != null )
 				s.shared.stream.record.listeners.remove(s);
@@ -503,7 +499,7 @@ class Client {
 	}
 
 	function playShared( s : RtmpStream ) {
-		s.shared.lock.wait();
+		s.shared.lock.acquire();
 		try {
 			if( s.cache != null )
 				while( true ) {
@@ -602,7 +598,8 @@ class Client {
 		case WaitHandshake:
 			if( len < Rtmp.HANDSHAKE_SIZE + 1 )
 				return null;
-			rtmp.i = new neko.io.StringInput(buf,pos,len);
+			rtmp.i = new haxe.io.BytesInput(buf,pos,len);
+			rtmp.i.bigEndian = true;
 			rtmp.readWelcome();
 			var hs = rtmp.readHandshake();
 			rtmp.writeWelcome();
@@ -612,25 +609,28 @@ class Client {
 		case WaitHandshakeResponse(hs):
 			if( len < Rtmp.HANDSHAKE_SIZE )
 				return null;
-			rtmp.i = new neko.io.StringInput(buf,pos,len);
+			rtmp.i = new haxe.io.BytesInput(buf,pos,len);
+			rtmp.i.bigEndian = true;
 			var hs2 = rtmp.readHandshake();
-			if( hs != hs2 )
+			if( hs.compare(hs2) != 0 )
 				throw "Invalid Handshake";
 			rtmp.writeHandshake(hs);
 			state = Ready;
 			return { msg : null, bytes : Rtmp.HANDSHAKE_SIZE };
 		case Ready:
-			var hsize = rtmp.getHeaderSize(buf.charCodeAt(pos));
+			var hsize = rtmp.getHeaderSize(buf.get(pos));
 			if( len < hsize )
 				return null;
-			rtmp.i = new neko.io.StringInput(buf,pos,len);
+			rtmp.i = new haxe.io.BytesInput(buf,pos,len);
+			rtmp.i.bigEndian = true;
 			var h = rtmp.readHeader();
 			state = WaitBody(h,rtmp.bodyLength(h,true));
 			return { msg : null, bytes : hsize };
 		case WaitBody(h,blen):
 			if( len < blen )
 				return null;
-			rtmp.i = new neko.io.StringInput(buf,pos,len);
+			rtmp.i = new haxe.io.BytesInput(buf,pos,len);
+			rtmp.i.bigEndian = true;
 			var p = rtmp.readPacket(h);
 			var msg = if( p != null ) { header : h, packet : p } else null;
 			state = Ready;
