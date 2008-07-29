@@ -42,13 +42,13 @@ enum RtmpCommand {
 
 enum RtmpPacket {
 	PCall( name : String, iid : Int, args : Array<AmfValue> );
-	PVideo( data : String );
-	PAudio( data : String );
-	PMeta( data : String );
+	PVideo( data : haxe.io.Bytes );
+	PAudio( data : haxe.io.Bytes );
+	PMeta( data : haxe.io.Bytes );
 	PCommand( sid : Int, v : RtmpCommand );
 	PBytesReaded( nbytes : Int );
 	PShared( data : SOData );
-	PUnknown( kind : Int, body : String );
+	PUnknown( kind : Int, body : haxe.io.Bytes );
 }
 
 typedef RtmpHeader = {
@@ -99,12 +99,12 @@ class Rtmp {
 		a;
 	};
 
-	var channels : Array<{ header : RtmpHeader, buffer : StringBuf, bytes : Int }>;
+	var channels : Array<{ header : RtmpHeader, buffer : haxe.io.BytesBuffer, bytes : Int }>;
 	var saves : Array<RtmpHeader>;
 	var read_chunk_size : Int;
 	var write_chunk_size : Int;
-	public var i : neko.io.Input;
-	public var o : neko.io.Output;
+	public var i : haxe.io.Input;
+	public var o : haxe.io.Output;
 
 	public function new(input,output) {
 		i = input;
@@ -116,24 +116,24 @@ class Rtmp {
 	}
 
 	public function readWelcome() {
-		if( i.readChar() != 3 )
+		if( i.readByte() != 3 )
 			throw "Invalid Welcome";
 	}
 
 	public function readHandshake() {
-		var uptimeLow = i.readUInt16B();
-		var uptimeHigh = i.readUInt16B();
-		var ping = i.readUInt32B();
+		var uptimeLow = i.readUInt16();
+		var uptimeHigh = i.readUInt16();
+		var ping = i.readUInt30();
 		return i.read(HANDSHAKE_SIZE - 8);
 	}
 
 	public function writeWelcome() {
-		o.writeChar(3);
+		o.writeByte(3);
 	}
 
 	public function writeHandshake( hs ) {
-		o.writeUInt32B(1); // uptime
-		o.writeUInt32B(1); // ping
+		o.writeUInt30(1); // uptime
+		o.writeUInt30(1); // ping
 		o.write(hs);
 	}
 
@@ -157,14 +157,18 @@ class Rtmp {
 	}
 
 	public function readHeader() : RtmpHeader {
-		var h = i.readChar();
+		var h = i.readByte();
 		var hsize = HEADER_SIZES[h >> 6];
 		var channel = h & 63;
 		var last = getLastHeader(channel);
-		if( hsize >= 4 ) last.timestamp = i.readUInt24B();
-		if( hsize >= 8 ) last.size = i.readUInt24B();
-		if( hsize >= 8 ) last.kind = kindOfInt(i.readChar());
-		if( hsize == 12 ) last.src_dst = i.readInt32();
+		if( hsize >= 4 ) last.timestamp = i.readUInt24();
+		if( hsize >= 8 ) last.size = i.readUInt24();
+		if( hsize >= 8 ) last.kind = kindOfInt(i.readByte());
+		if( hsize == 12 ) {
+			i.bigEndian = false;
+			last.src_dst = i.readInt31();
+			i.bigEndian = true;
+		}
 		return {
 			channel : channel,
 			timestamp : last.timestamp,
@@ -184,15 +188,18 @@ class Rtmp {
 			hsize = 4;
 		else
 			hsize = 1;
-		o.writeChar(p.channel | (INV_HSIZES[hsize] << 6));
+		o.writeByte(p.channel | (INV_HSIZES[hsize] << 6));
 		if( hsize >= 4 )
-			o.writeUInt24B(p.timestamp);
+			o.writeUInt24(p.timestamp);
 		if( hsize >= 8 ) {
-			o.writeUInt24B(p.size);
-			o.writeChar(kindToInt(p.kind));
+			o.writeUInt24(p.size);
+			o.writeByte(kindToInt(p.kind));
 		}
-		if( hsize == 12 )
-			o.writeInt32(p.src_dst);
+		if( hsize == 12 ) {
+			o.bigEndian = false;
+			o.writeInt31(p.src_dst);
+			o.bigEndian = true;
+		}
 	}
 
 	public function send( channel : Int, p : RtmpPacket, ?ts, ?streamid ) {
@@ -206,8 +213,9 @@ class Rtmp {
 		var data = null;
 		switch( p ) {
 		case PCommand(sid,cmd):
-			var o = new neko.io.StringOutput();
-			var kind,v1,v2;
+			var o = new haxe.io.BytesOutput();
+			o.bigEndian = true;
+			var kind,v1 = null,v2 = null;
 			switch( cmd ) {
 			case CClear:
 				kind = 0;
@@ -229,21 +237,22 @@ class Rtmp {
 				v1 = a;
 				v2 = b;
 			}
-			o.writeUInt16B(kind);
-			o.writeUInt32B(sid);
+			o.writeUInt16(kind);
+			o.writeUInt30(sid);
 			if( v1 != null )
-				o.writeUInt32B(v1);
+				o.writeUInt30(v1);
 			if( v2 != null )
-				o.writeUInt32B(v2);
-			data = o.toString();
+				o.writeUInt30(v2);
+			data = o.getBytes();
 			h.kind = KCommand;
 		case PCall(cmd,iid,args):
-			var o = new neko.io.StringOutput();
+			var o = new haxe.io.BytesOutput();
+			o.bigEndian = true;
 			Amf.write(o,AString(cmd));
 			Amf.write(o,ANumber(iid));
 			for( x in args )
 				Amf.write(o,x);
-			data = o.toString();
+			data = o.getBytes();
 			h.kind = KCall;
 		case PAudio(d):
 			data = d;
@@ -255,14 +264,16 @@ class Rtmp {
 			data = d;
 			h.kind = KMeta;
 		case PBytesReaded(n):
-			var s = new neko.io.StringOutput();
-			s.writeUInt32B(n);
-			data = s.toString();
+			var s = new haxe.io.BytesOutput();
+			s.bigEndian = true;
+			s.writeUInt30(n);
+			data = s.getBytes();
 			h.kind = KBytesReaded;
 		case PShared(so):
-			var s = new neko.io.StringOutput();
+			var s = new haxe.io.BytesOutput();
+			s.bigEndian = true;
 			SharedObject.write(s,so);
-			data = s.toString();
+			data = s.getBytes();
 			h.kind = KShared;
 		case PUnknown(k,d):
 			data = d;
@@ -278,7 +289,7 @@ class Rtmp {
 			var len = data.length - pos;
 			o.writeFullBytes(data,0,pos);
 			while( len > 0 ) {
-				o.writeChar(channel | (INV_HSIZES[1] << 6));
+				o.writeByte(channel | (INV_HSIZES[1] << 6));
 				var n = if( len > write_chunk_size ) write_chunk_size else len;
 				o.writeFullBytes(data,pos,n);
 				pos += n;
@@ -287,15 +298,16 @@ class Rtmp {
 		}
 	}
 
-	function processBody( h : RtmpHeader, body : String ) {
+	function processBody( h : RtmpHeader, body : haxe.io.Bytes ) {
 		switch( h.kind ) {
 		case KCall:
-			var i = new neko.io.StringInput(body);
+			var i = new haxe.io.BytesInput(body);
+			i.bigEndian = true;
 			var name = switch( Amf.read(i) ) { case AString(s): s; default: throw "Invalid name"; }
 			var iid = switch( Amf.read(i) ) { case ANumber(n): Std.int(n); default: throw "Invalid nargs"; }
 			var args = new Array();
 			while( true ) {
-				var c = try i.readChar() catch( e : Dynamic ) break;
+				var c = try i.readByte() catch( e : Dynamic ) break;
 				args.push(Amf.readWithCode(i,c));
 			}
 			return PCall(name,iid,args);
@@ -306,9 +318,10 @@ class Rtmp {
 		case KMeta:
 			return PMeta(body);
 		case KCommand:
-			var i = new neko.io.StringInput(body);
-			var kind = i.readUInt16B();
-			var sid = i.readUInt32B();
+			var i = new haxe.io.BytesInput(body);
+			i.bigEndian = true;
+			var kind = i.readUInt16();
+			var sid = i.readUInt30();
 			var bsize = COMMAND_SIZES[kind];
 			if( bsize != null && body.length != bsize + 6 )
 				throw "Invalid command size ("+kind+","+body.length+")";
@@ -318,29 +331,35 @@ class Rtmp {
 			case 1:
 				CPlay;
 			case 3:
-				CClientBuffer( i.readUInt32B() );
+				CClientBuffer( i.readUInt30() );
 			case 4:
 				CReset;
 			case 6:
-				CPing( i.readUInt32B() );
+				CPing( i.readUInt30() );
 			default:
 				if( body.length != 6 && body.length != 10 && body.length != 14 )
 					throw "Invalid command size ("+kind+","+body.length+")";
-				var a = if( body.length > 6 ) i.readUInt32B() else null;
-				var b = if( body.length > 10 ) i.readUInt32B() else null;
+				var a = if( body.length > 6 ) i.readUInt30() else null;
+				var b = if( body.length > 10 ) i.readUInt30() else null;
 				CUnknown(kind,a,b);
 			};
 			return PCommand(sid,cmd);
 		case KShared:
-			var so = SharedObject.read(new neko.io.StringInput(body));
+			var i = new haxe.io.BytesInput(body);
+			i.bigEndian = true;
+			var so = SharedObject.read(i);
 			return PShared(so);
 		case KUnknown(k):
 			return PUnknown(k,body);
 		case KChunkSize:
-			read_chunk_size = new neko.io.StringInput(body).readUInt32B();
+			var i = new haxe.io.BytesInput(body);
+			i.bigEndian = true;
+			read_chunk_size = i.readUInt30();
 			return null;
 		case KBytesReaded:
-			return PBytesReaded(new neko.io.StringInput(body).readUInt32B());
+			var i = new haxe.io.BytesInput(body);
+			i.bigEndian = true;
+			return PBytesReaded(i.readUInt30());
 		}
 	}
 
@@ -363,7 +382,7 @@ class Rtmp {
 		if( s == null ) {
 			if( h.size <= read_chunk_size )
 				return processBody(h,i.read(h.size));
-			var buf = new StringBuf();
+			var buf = new haxe.io.BytesBuffer();
 			buf.add(i.read(read_chunk_size));
 			channels[h.channel] = { header : h, buffer : buf, bytes : h.size - read_chunk_size };
 		} else {
@@ -381,7 +400,7 @@ class Rtmp {
 			} else {
 				s.buffer.add(i.read(s.bytes));
 				channels[h.channel] = null;
-				return processBody(s.header,s.buffer.toString());
+				return processBody(s.header,s.buffer.getBytes());
 			}
 		}
 		return null;

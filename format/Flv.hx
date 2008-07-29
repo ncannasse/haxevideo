@@ -17,25 +17,26 @@
 package format;
 
 enum FLVChunk {
-	FLVAudio( data : String, time : Int );
-	FLVVideo( data : String, time : Int );
-	FLVMeta( data : String, time : Int );
+	FLVAudio( data : haxe.io.Bytes, time : Int );
+	FLVVideo( data : haxe.io.Bytes, time : Int );
+	FLVMeta( data : haxe.io.Bytes, time : Int );
 }
 
 class Flv {
 
-	public static function readHeader( ch : neko.io.Input ) {
-		if( ch.read(3) != 'FLV' )
+	public static function readHeader( ch : haxe.io.Input ) {
+		ch.bigEndian = true;
+		if( ch.readString(3) != 'FLV' )
 			throw "Invalid signature";
-		if( ch.readChar() != 0x01 )
+		if( ch.readByte() != 0x01 )
 			throw "Invalid version";
-		var flags = ch.readChar();
+		var flags = ch.readByte();
 		if( flags & 0xF2 != 0 )
 			throw "Invalid type flags "+flags;
-		var offset = ch.readUInt32B();
+		var offset = ch.readUInt30();
 		if( offset != 0x09 )
 			throw "Invalid offset "+offset;
-		var prev = ch.readUInt32B();
+		var prev = ch.readUInt30();
 		if( prev != 0 )
 			throw "Invalid prev "+prev;
 		return {
@@ -45,23 +46,24 @@ class Flv {
 		};
 	}
 
-	public static function writeHeader( ch : neko.io.Output ) {
-		ch.write("FLV");
-		ch.writeChar(0x01);
-		ch.writeChar(0x05);
-		ch.writeUInt32B(0x09);
-		ch.writeUInt32B(0x00);
+	public static function writeHeader( ch : haxe.io.Output ) {
+		ch.bigEndian = true;
+		ch.writeString("FLV");
+		ch.writeByte(0x01);
+		ch.writeByte(0x05);
+		ch.writeUInt30(0x09);
+		ch.writeUInt30(0x00);
 	}
 
-	public static function readChunk( ch : neko.io.Input ) {
-		var k = try ch.readChar() catch( e : neko.io.Eof ) return null;
-		var size = ch.readUInt24B();
-		var time = ch.readUInt24B();
-		var reserved = ch.readUInt32B();
+	public static function readChunk( ch : haxe.io.Input ) {
+		var k = try ch.readByte() catch( e : haxe.io.Eof ) return null;
+		var size = ch.readUInt24();
+		var time = ch.readUInt24();
+		var reserved = ch.readUInt30();
 		if( reserved != 0 )
 			throw "Invalid reserved "+reserved;
 		var data = ch.read(size);
-		var size2 = ch.readUInt32B();
+		var size2 = ch.readUInt30();
 		if( size2 != 0 && size2 != size + 11 )
 			throw "Invalid size2 ("+size+" != "+size2+")";
 		return switch( k ) {
@@ -76,23 +78,23 @@ class Flv {
 		}
 	}
 
-	public static function writeChunk( ch : neko.io.Output, chunk : FLVChunk ) {
+	public static function writeChunk( ch : haxe.io.Output, chunk : FLVChunk ) {
 		var k, data, time;
 		switch( chunk ) {
 		case FLVAudio(d,t): k = 0x08; data = d; time = t;
 		case FLVVideo(d,t): k = 0x09; data = d; time = t;
 		case FLVMeta(d,t): k = 0x12; data = d; time = t;
 		}
-		ch.writeChar(k);
-		ch.writeUInt24B(data.length);
-		ch.writeUInt24B(time);
-		ch.writeUInt32B(0);
+		ch.writeByte(k);
+		ch.writeUInt24(data.length);
+		ch.writeUInt24(time);
+		ch.writeUInt30(0);
 		ch.write(data);
-		ch.writeUInt32B(data.length + 11);
+		ch.writeUInt30(data.length + 11);
 	}
 
-	public static function isVideoKeyFrame( data : String ) {
-		return (data.charCodeAt(0) >> 4) == 1;
+	public static function isVideoKeyFrame( data : haxe.io.Bytes ) {
+		return (data.get(0) >> 4) == 1;
 	}
 
 }

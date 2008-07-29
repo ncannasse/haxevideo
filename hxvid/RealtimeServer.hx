@@ -29,9 +29,9 @@ private typedef SocketInfos<Client> = {
 	var handle : SocketHandle;
 	var client : Client;
 	var thread : ThreadInfos;
-	var wbuffer : String;
+	var wbuffer : haxe.io.Bytes;
 	var wbytes : Int;
-	var rbuffer : String;
+	var rbuffer : haxe.io.Bytes;
 	var rbytes : Int;
 }
 
@@ -39,6 +39,33 @@ private enum ThreadMessage {
 	Connect( s : Socket );
 	Disconnect( s : Socket );
 	Wakeup( s : Socket, delay : Float );
+}
+
+class RealtimeSocketOutput<Client> extends neko.net.SocketOutput {
+
+	var c : SocketInfos<Client>;
+
+	public function new(c) {
+		this.c = c;
+		super(c.handle);
+	}
+
+	override function writeByte( ch : Int ) {
+		if( c.wbytes == 0 )
+			c.thread.wsocks.push(c.sock);
+		c.wbuffer.set(c.wbytes,ch);
+		c.wbytes += 1;
+	}
+
+	override function writeBytes( buf : haxe.io.Bytes, pos : Int, len : Int ) {
+		if( len == 0 )
+			return 0;
+		if( c.wbytes == 0 )
+			c.thread.wsocks.push(c.sock);
+		c.wbuffer.blit(c.wbytes,buf,pos,len);
+		c.wbytes += len;
+		return len;
+	}
 }
 
 class RealtimeServer<Client> {
@@ -57,7 +84,7 @@ class RealtimeServer<Client> {
 	var threads : Array<ThreadInfos>;
 
 	private static var socket_send_char : SocketHandle -> Int -> Void = neko.Lib.load("std","socket_send_char",2);
-	private static var socket_send : SocketHandle -> Void -> Int -> Int -> Int = neko.Lib.load("std","socket_send",4);
+	private static var socket_send : SocketHandle -> Dynamic -> Int -> Int -> Int = neko.Lib.load("std","socket_send",4);
 
 	public function new() {
 		threads = new Array();
@@ -183,23 +210,6 @@ class RealtimeServer<Client> {
 		return t;
 	}
 
-	function writeClientChar( c : SocketInfos<Client>, ch : Int ) {
-		if( c.wbytes == 0 )
-			c.thread.wsocks.push(c.sock);
-		untyped __dollar__sset(c.wbuffer.__s,c.wbytes,ch);
-		c.wbytes += 1;
-	}
-
-	function writeClientBytes( c : SocketInfos<Client>, buf : String, pos : Int, len : Int ) {
-		if( len == 0 )
-			return 0;
-		if( c.wbytes == 0 )
-			c.thread.wsocks.push(c.sock);
-		neko.Lib.copyBytes(c.wbuffer,c.wbytes,buf,pos,len);
-		c.wbytes += len;
-		return len;
-	}
-
 	function addClient( s : neko.net.Socket ) {
 		var tid = Std.random(config.threadsCount);
 		var thread = threads[tid];
@@ -213,13 +223,12 @@ class RealtimeServer<Client> {
 			handle : sh.__s,
 			client : null,
 			thread : thread,
-			wbuffer : neko.Lib.makeString(config.writeBufferSize),
+			wbuffer : haxe.io.Bytes.alloc(config.writeBufferSize),
 			wbytes : 0,
-			rbuffer : neko.Lib.makeString(config.minReadBufferSize),
+			rbuffer : haxe.io.Bytes.alloc(config.minReadBufferSize),
 			rbytes : 0,
 		};
-		s.output.writeChar = callback(writeClientChar,cinf);
-		s.output.writeBytes = callback(writeClientBytes,cinf);
+		untyped s.output = new RealtimeSocketOutput(cinf);
 		s.custom = cinf;
 		cinf.thread.t.sendMessage(Connect(s));
 	}
@@ -232,7 +241,7 @@ class RealtimeServer<Client> {
 		var pos = 0;
 		while( c.wbytes > 0 )
 			try {
-				var len = socket_send(c.handle,untyped c.wbuffer.__s,pos,c.wbytes);
+				var len = socket_send(c.handle,c.wbuffer.getData(),pos,c.wbytes);
 				pos += len;
 				c.wbytes -= len;
 			} catch( e : Dynamic ) {
@@ -244,7 +253,7 @@ class RealtimeServer<Client> {
 			c.thread.wsocks.remove(c.sock);
 			clientFillBuffer(c.client);
 		} else
-			neko.Lib.copyBytes(c.wbuffer,0,c.wbuffer,pos,c.wbytes);
+			c.wbuffer.blit(0,c.wbuffer,pos,c.wbytes);
 		return true;
 	}
 
@@ -257,15 +266,15 @@ class RealtimeServer<Client> {
 				if( c.rbuffer.length == config.maxReadBufferSize )
 					throw "Max buffer size reached";
 			}
-			var newbuf = neko.Lib.makeString(newsize);
-			neko.Lib.copyBytes(newbuf,0,c.rbuffer,0,c.rbytes);
+			var newbuf = haxe.io.Bytes.alloc(newsize);
+			newbuf.blit(0,c.rbuffer,0,c.rbytes);
 			c.rbuffer = newbuf;
 			available = newsize - c.rbytes;
 		}
 		try {
 			c.rbytes += c.sock.input.readBytes(c.rbuffer,c.rbytes,available);
 		} catch( e : Dynamic ) {
-			if( !Std.is(e,neko.io.Eof) && !Std.is(e,neko.io.Error) )
+			if( !Std.is(e,haxe.io.Eof) && !Std.is(e,haxe.io.Error) )
 				neko.Lib.rethrow(e);
 			return false;
 		}
@@ -278,7 +287,7 @@ class RealtimeServer<Client> {
 			c.rbytes -= m;
 		}
 		if( pos > 0 )
-			neko.Lib.copyBytes(c.rbuffer,0,c.rbuffer,pos,c.rbytes);
+			c.rbuffer.blit(0,c.rbuffer,pos,c.rbytes);
 		return true;
 	}
 
@@ -288,7 +297,7 @@ class RealtimeServer<Client> {
 		return null;
 	}
 
-	public function readClientMessage( c : Client, buf : String, pos : Int, len : Int ) : Int {
+	public function readClientMessage( c : Client, buf : haxe.io.Bytes, pos : Int, len : Int ) : Int {
 		return null;
 	}
 

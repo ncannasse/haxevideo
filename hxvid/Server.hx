@@ -32,7 +32,7 @@ class Server extends RealtimeServer<Client> {
 		c.cleanup();
 	}
 
-	public override function readClientMessage( c : Client, buf : String, pos : Int, len : Int ) {
+	public override function readClientMessage( c : Client, buf : haxe.io.Bytes, pos : Int, len : Int ) {
 		var m = c.readProgressive(buf,pos,len);
 		if( m == null )
 			return null;
