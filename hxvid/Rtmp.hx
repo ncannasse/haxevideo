@@ -14,9 +14,9 @@
 /* Lesser General Public License or the LICENSE file for more details.		*/
 /*																			*/
 /* ************************************************************************ */
-package format;
-import format.Amf;
-import format.SharedObject;
+package hxvid;
+import format.amf.Value;
+import hxvid.SharedObject;
 
 enum RtmpKind {
 	KCall;
@@ -41,7 +41,7 @@ enum RtmpCommand {
 }
 
 enum RtmpPacket {
-	PCall( name : String, iid : Int, args : Array<AmfValue> );
+	PCall( name : String, iid : Int, args : Array<Value> );
 	PVideo( data : haxe.io.Bytes );
 	PAudio( data : haxe.io.Bytes );
 	PMeta( data : haxe.io.Bytes );
@@ -247,11 +247,11 @@ class Rtmp {
 			h.kind = KCommand;
 		case PCall(cmd,iid,args):
 			var o = new haxe.io.BytesOutput();
-			o.bigEndian = true;
-			Amf.write(o,AString(cmd));
-			Amf.write(o,ANumber(iid));
+			var w = new format.amf.Writer(o);
+			w.write(AString(cmd));
+			w.write(ANumber(iid));
 			for( x in args )
-				Amf.write(o,x);
+				w.write(x);
 			data = o.getBytes();
 			h.kind = KCall;
 		case PAudio(d):
@@ -302,13 +302,13 @@ class Rtmp {
 		switch( h.kind ) {
 		case KCall:
 			var i = new haxe.io.BytesInput(body);
-			i.bigEndian = true;
-			var name = switch( Amf.read(i) ) { case AString(s): s; default: throw "Invalid name"; }
-			var iid = switch( Amf.read(i) ) { case ANumber(n): Std.int(n); default: throw "Invalid nargs"; }
+			var r = new format.amf.Reader(i);
+			var name = switch( r.read() ) { case AString(s): s; default: throw "Invalid name"; }
+			var iid = switch( r.read() ) { case ANumber(n): Std.int(n); default: throw "Invalid nargs"; }
 			var args = new Array();
 			while( true ) {
 				var c = try i.readByte() catch( e : Dynamic ) break;
-				args.push(Amf.readWithCode(i,c));
+				args.push(r.readWithCode(c));
 			}
 			return PCall(name,iid,args);
 		case KVideo:
@@ -346,8 +346,7 @@ class Rtmp {
 			return PCommand(sid,cmd);
 		case KShared:
 			var i = new haxe.io.BytesInput(body);
-			i.bigEndian = true;
-			var so = SharedObject.read(i);
+			var so = SharedObject.read(i,new format.amf.Reader(i));
 			return PShared(so);
 		case KUnknown(k):
 			return PUnknown(k,body);

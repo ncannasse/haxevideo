@@ -15,16 +15,16 @@
 /* Lesser General Public License or the LICENSE file for more details.		*/
 /*																			*/
 /* ************************************************************************ */
-package format;
-import format.Amf;
+package hxvid;
+import format.amf.Value;
 
 enum SOCommand {
 	SOConnect;
 	SODisconnect;
-	SOSetAttribute( name : String, value : AmfValue );
-	SOUpdateData( data : Hash<AmfValue> );
+	SOSetAttribute( name : String, value : Value );
+	SOUpdateData( data : Hash<Value> );
 	SOUpdateAttribute( name : String );
-	SOSendMessage( msg : AmfValue );
+	SOSendMessage( msg : Value );
 	SOStatus( msg : String, type : String );
 	SOClearData;
 	SODeleteData;
@@ -46,7 +46,7 @@ class SharedObject {
 		return i.readString(i.readUInt16());
 	}
 
-	public static function read( i : haxe.io.Input ) : SOData {
+	public static function read( i : haxe.io.Input, r : format.amf.Reader ) : SOData {
 		var name = readString(i);
 		var ver = i.readUInt30();
 		var persist = i.readUInt30() == 2;
@@ -62,21 +62,21 @@ class SharedObject {
 				SODisconnect;
 			case 3:
 				var name = readString(i);
-				SOSetAttribute(name,Amf.read(i));
+				SOSetAttribute(name,r.read());
 			case 4:
 				var values = new haxe.io.BytesInput(i.read(size));
-				values.bigEndian = true;
+				var r = new format.amf.Reader(values);
 				var hash = new Hash();
 				while( true ) {
 					var size = try values.readUInt16() catch( e : haxe.io.Eof ) break;
 					var name = values.readString(size);
-					hash.set(name,Amf.read(values));
+					hash.set(name,r.read());
 				}
 				SOUpdateData(hash);
 			case 5:
 				SOUpdateAttribute(readString(i));
 			case 6:
-				SOSendMessage(Amf.read(i));
+				SOSendMessage(r.read());
 			case 7:
 				var msg = readString(i);
 				var type = readString(i);
@@ -105,22 +105,22 @@ class SharedObject {
 		o.writeString(s);
 	}
 
-	static function writeCommandData( o : haxe.io.Output, cmd ) {
+	static function writeCommandData( o : haxe.io.Output, w : format.amf.Writer, cmd ) {
 		switch( cmd ) {
 		case SOConnect,SODisconnect,SOClearData,SODeleteData,SOInitialData:
 			// nothing
 		case SOSetAttribute(name,value):
 			writeString(o,name);
-			Amf.write(o,value);
+			w.write(value);
 		case SOUpdateData(data):
 			for( k in data.keys() ) {
 				writeString(o,k);
-				Amf.write(o,data.get(k));
+				w.write(data.get(k));
 			}
 		case SOUpdateAttribute(name):
 			writeString(o,name);
 		case SOSendMessage(msg):
-			Amf.write(o,msg);
+			w.write(msg);
 		case SOStatus(msg,type):
 			writeString(o,msg);
 			writeString(o,type);
@@ -138,8 +138,8 @@ class SharedObject {
 		for( cmd in so.commands ) {
 			o.writeByte( Type.enumIndex(cmd) + 1 );
 			var s = new haxe.io.BytesOutput();
-			s.bigEndian = true;
-			writeCommandData(s,cmd);
+			var w = new format.amf.Writer(s);
+			writeCommandData(s,w,cmd);
 			var data = s.getBytes();
 			o.writeUInt30(data.length);
 			o.write(data);

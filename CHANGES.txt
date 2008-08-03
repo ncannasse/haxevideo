@@ -6,6 +6,9 @@ KNOWN THINGS TO FIX
 	properly notice client of stream terminaison
 	fix video timing after pause/seek
 
+2008-??-??: 1.2
+	moved flv and amf support from SVN to hxformat library
+
 2008-07-29: 1.1
 	fixed int32 overflow in handshake
 	fixed thread socket sleep list concurrency

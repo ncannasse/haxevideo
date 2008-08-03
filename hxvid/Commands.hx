@@ -15,8 +15,7 @@
 /*																			*/
 /* ************************************************************************ */
 package hxvid;
-
-import format.Amf;
+import format.amf.Value;
 
 enum ArgSpecial<T> {
 	ArgOpt( v : T );
@@ -28,7 +27,7 @@ class T {
 	public static var String = "";
 	public static var Bool = true;
 	public static var Null : Void = null;
-	public static var Object = new Hash<AmfValue>();
+	public static var Object = new Hash<Value>();
 	public static function Opt<T>(t : T) : T { return cast ArgOpt(t); }
 }
 
@@ -62,14 +61,14 @@ class Commands<T> {
 		return h.exists(name);
 	}
 
-	function checkArg( a : AmfValue, t : Dynamic ) {
+	function checkArg( a : Value, t : Dynamic ) {
 		var v : Dynamic = null;
 		switch( t ) {
 		case T.Null:
 			if( a == ANull || a == AUndefined )
 				return VNull;
 		case T.Int:
-			v = Amf.number(a);
+			v = format.amf.Tools.number(a);
 			if( v != null ) {
 				// sometimes, AMF sends floats that are not ints.
 				// We will assume a .001 precision here
@@ -79,10 +78,10 @@ class Commands<T> {
 				else
 					v = Std.int(i/1000);
 			}
-		case T.String: v = Amf.string(a);
-		case T.Float: v = Amf.number(a);
-		case T.Object: v = Amf.object(a);
-		case T.Bool: v = Amf.bool(a);
+		case T.String: v = format.amf.Tools.string(a);
+		case T.Float: v = format.amf.Tools.number(a);
+		case T.Object: v = format.amf.Tools.object(a);
+		case T.Bool: v = format.amf.Tools.bool(a);
 		default:
 			if( Std.is(t,ArgSpecial) ) {
 				var tv = t;
@@ -98,7 +97,7 @@ class Commands<T> {
 		return v;
 	}
 
-	function checkArgs( args : Array<AmfValue>, targs : Array<Dynamic> ) {
+	function checkArgs( args : Array<Value>, targs : Array<Dynamic> ) {
 		var ok = true;
 		var vargs = new Array<Dynamic>();
 		if( args.length > targs.length )
