@@ -16,9 +16,9 @@
 /* ************************************************************************ */
 package hxvid;
 
-import format.Amf;
-import format.Flv;
-import format.Rtmp;
+import format.amf.Value;
+import format.flv.Data;
+import hxvid.Rtmp;
 import hxvid.Commands;
 
 typedef CommandInfos = {
@@ -40,7 +40,7 @@ typedef RtmpStream = {
 	var cache : List<{ data : RtmpPacket, time : Int }>;
 	var play : {
 		var file : String;
-		var flv : haxe.io.Input;
+		var flv : format.flv.Reader;
 		var startTime : Float;
 		var curTime : Int;
 		var blocked : Null<Float>;
@@ -49,7 +49,7 @@ typedef RtmpStream = {
 	var record : {
 		var file : String;
 		var startTime : Float;
-		var flv : haxe.io.Output;
+		var flv : format.flv.Writer;
 		var shareName : String;
 		var listeners : List<RtmpStream>;
 		var bytes : Int;
@@ -118,7 +118,7 @@ class Client {
 			throw "Publish not done on stream "+h.src_dst;
 		var time = Std.int((neko.Sys.time() - r.startTime) * 1000);
 		var chunk = kind(data,time);
-		Flv.writeChunk(r.flv,chunk);
+		r.flv.writeChunk(chunk);
 		r.bytes += data.length;
 		if( r.bytes - r.lastPing > 100000 ) {
 			rtmp.send(2,PBytesReaded(r.bytes));
@@ -140,7 +140,7 @@ class Client {
 	function error( i : CommandInfos, msg : String ) {
 		rtmp.send(i.h.channel,PCall("onStatus",0,[
 			ANull,
-			Amf.encode({
+			format.amf.Tools.encode({
 				level : "error",
 				code : "NetStream.Error",
 				details : msg,
@@ -164,11 +164,11 @@ class Client {
 		return s;
 	}
 
-	function openFLV( file ) : haxe.io.Input {
+	function openFLV( file ) : format.flv.Reader {
 		var flv = null;
 		try {
-			flv = neko.io.File.read(file,true);
-			Flv.readHeader(flv);
+			flv = new format.flv.Reader(neko.io.File.read(file,true));
+			flv.readHeader();
 		} catch( e : Dynamic ) {
 			if( flv != null ) {
 				flv.close();
@@ -179,9 +179,9 @@ class Client {
 		return flv;
 	}
 
-	function cmdConnect( i : CommandInfos, obj : Hash<AmfValue> ) {
+	function cmdConnect( i : CommandInfos, obj : Hash<Value> ) {
 		var app;
-		if( (app = Amf.string(obj.get("app"))) == null )
+		if( (app = format.amf.Tools.string(obj.get("app"))) == null )
 			error(i,"Invalid 'connect' parameters");
 		if( app != "" && !file_security.match(app) )
 			error(i,"Invalid application path");
@@ -190,7 +190,7 @@ class Client {
 			dir = dir + "/";
 		rtmp.send(i.h.channel,PCall("_result",i.id,[
 			ANull,
-			Amf.encode({
+			format.amf.Tools.encode({
 				level : "status",
 				code : "NetConnection.Connect.Success",
 				description : "Connection succeeded."
@@ -209,7 +209,7 @@ class Client {
 	function sendStatus( s : RtmpStream, status : String, infos : Dynamic ) {
 		infos.code = status;
 		infos.level = "status";
-		rtmp.send(s.channel,PCall("onStatus",0,[ANull,Amf.encode(infos)]),null,s.id);
+		rtmp.send(s.channel,PCall("onStatus",0,[ANull,format.amf.Tools.encode(infos)]),null,s.id);
 	}
 
 	function cmdPlay( i : CommandInfos, _ : Void, file : String ) {
@@ -270,8 +270,8 @@ class Client {
 		if( s == null || s.record != null )
 			error(i,"Invalid 'publish' streamid'");
 		file = securize(i,file);
-		var flv : haxe.io.Output = neko.io.File.write(file,true);
-		Flv.writeHeader(flv);
+		var flv = new format.flv.Writer(neko.io.File.write(file,true));
+		flv.writeHeader({ hasAudio : true, hasVideo : true, hasMeta : false });
 		s.channel = i.h.channel;
 		s.record = {
 			file : file,
@@ -316,7 +316,7 @@ class Client {
 		}
 		rtmp.send(i.h.channel,PCall("_result",i.id,[
 			ANull,
-			Amf.encode({
+			format.amf.Tools.encode({
 				level : "status",
 				code : if( pause ) "NetStream.Pause.Notify" else "NetStream.Unpause.Notify",
 			})
@@ -343,7 +343,7 @@ class Client {
 		seek(s,time);
 		rtmp.send(s.channel,PCall("_result",0,[
 			ANull,
-			Amf.encode({
+			format.amf.Tools.encode({
 				level : "status",
 				code : "NetStream.Seek.Notify",
 			})
@@ -456,7 +456,7 @@ class Client {
 		var audioCache = null;
 		var metaCache = null;
 		while( true ) {
-			var c = Flv.readChunk(s.play.flv);
+			var c = s.play.flv.readChunk();
 			if( c == null )
 				break;
 			switch( c ) {
@@ -468,7 +468,7 @@ class Client {
 					break;
 				audio = false;
 			case FLVVideo(data,time):
-				var keyframe = Flv.isVideoKeyFrame(data);
+				var keyframe = format.flv.Tools.isVideoKeyFrame(data);
 				if( keyframe )
 					s.cache = new List();
 				if( s.video )
@@ -545,7 +545,7 @@ class Client {
 		}
 		var reltime = Std.int((t - p.startTime) * 1000);
 		while( reltime > p.curTime ) {
-			var c = Flv.readChunk(p.flv);
+			var c = p.flv.readChunk();
 			if( c == null ) {
 				p.flv.close();
 				s.play = null;

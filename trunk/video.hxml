@@ -8,4 +8,4 @@
 # Server
 -neko server.n
 -main hxvid.Server
-
+-lib format
