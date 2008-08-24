@@ -7,6 +7,12 @@ In order to run the haXeVideo server, you need first to download install haXe fr
 
 You can then download the latest haXeVideo release from the *Downloads* section.
 
+You'll also have to install the `format` library to compile haxevideo. Run the following command from the commandline :
+
+{{{
+haxelib install format
+}}}
+
 = Testing =
 
 Once you have the source releases, run _haxe video.hxml_, this will compile a _server.n_ and a _video.swf_ file. You can start the server on localhost by executing :
