@@ -8,6 +8,7 @@ KNOWN THINGS TO FIX
 
 2008-??-??: 1.2
 	moved flv and amf support from SVN to hxformat library
+	added rtmp support for channels > 63
 
 2008-07-29: 1.1
 	fixed int32 overflow in handshake

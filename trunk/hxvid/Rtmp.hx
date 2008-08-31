@@ -138,7 +138,8 @@ class Rtmp {
 	}
 
 	public function getHeaderSize( h : Int ) {
-		return HEADER_SIZES[h >> 6];
+		var ch = h & 63;
+		return HEADER_SIZES[h >> 6] + ((ch > 1) ? 0 : (ch == 0) ? 1 : 2);
 	}
 
 	function getLastHeader( channel ) {
@@ -160,6 +161,12 @@ class Rtmp {
 		var h = i.readByte();
 		var hsize = HEADER_SIZES[h >> 6];
 		var channel = h & 63;
+		if( channel == 0 )
+			channel = i.readByte() + 64;
+		else if( channel == 1 ) {
+			var c0 = i.readByte();
+			channel = (c0 | (i.readByte() << 8)) + 64;
+		}
 		var last = getLastHeader(channel);
 		if( hsize >= 4 ) last.timestamp = i.readUInt24();
 		if( hsize >= 8 ) last.size = i.readUInt24();
@@ -178,6 +185,20 @@ class Rtmp {
 		};
 	}
 
+	function writeChannel( ch : Int, hsize : Int ) {
+		if( ch <= 63 )
+			o.writeByte(ch | (INV_HSIZES[hsize] << 6));
+		else if( ch < 320 ) {
+			o.writeByte(INV_HSIZES[hsize] << 6);
+			o.writeByte(ch - 64);
+		} else {
+			o.writeByte((INV_HSIZES[hsize] << 6) | 1);
+			ch -= 64;
+			o.writeByte(ch & 0xFF);
+			o.writeByte(ch >> 8);
+		}
+	}
+
 	function writeHeader( p : RtmpHeader ) {
 		var hsize;
 		if( p.src_dst != null )
@@ -188,7 +209,7 @@ class Rtmp {
 			hsize = 4;
 		else
 			hsize = 1;
-		o.writeByte(p.channel | (INV_HSIZES[hsize] << 6));
+		writeChannel(p.channel,hsize);
 		if( hsize >= 4 )
 			o.writeUInt24(p.timestamp);
 		if( hsize >= 8 ) {
@@ -289,7 +310,7 @@ class Rtmp {
 			var len = data.length - pos;
 			o.writeFullBytes(data,0,pos);
 			while( len > 0 ) {
-				o.writeByte(channel | (INV_HSIZES[1] << 6));
+				writeChannel(channel,1);
 				var n = if( len > write_chunk_size ) write_chunk_size else len;
 				o.writeFullBytes(data,pos,n);
 				pos += n;
