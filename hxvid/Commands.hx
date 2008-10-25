@@ -71,12 +71,13 @@ class Commands<T> {
 			v = format.amf.Tools.number(a);
 			if( v != null ) {
 				// sometimes, AMF sends floats that are not ints.
-				// We will assume a .001 precision here
-				var i = Std.int(v * 1000 + 0.001);
-				if( i % 1000 != 0 )
+				// We will assume a .0001 precision here
+				var i = Math.round(v);
+				var e = v - i;
+				if( e > 1e4 || e < -1e4 )
 					v = null;
 				else
-					v = Std.int(i/1000);
+					v = i;
 			}
 		case T.String: v = format.amf.Tools.string(a);
 		case T.Float: v = format.amf.Tools.number(a);
