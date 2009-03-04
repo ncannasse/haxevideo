@@ -123,7 +123,7 @@ class Rtmp {
 	public function readHandshake() {
 		var uptimeLow = i.readUInt16();
 		var uptimeHigh = i.readUInt16();
-		var ping = i.readUInt30();
+		var ping = i.readInt32();
 		return i.read(HANDSHAKE_SIZE - 8);
 	}
 
